@@ -22,6 +22,10 @@ T clamp(const T& v, const T& lower, const T& upper) {
     return (v < lower) ? lower : (upper < v) ? upper : v;
 }
 
+//double erand48(unsigned short xsubi[3]) {
+//    return (double)rand() / (double)RAND_MAX;
+//}
+
 void PathTracer::traceScene(QRgb *imageData, const Scene& scene)
 {
     std::vector<Vector3f> intensityValues(m_width * m_height);
@@ -36,8 +40,7 @@ void PathTracer::traceScene(QRgb *imageData, const Scene& scene)
             {
                 for(int sx = 0; sx < 2; sx++)
                 {
-
-                        intensityValues[offset] += tracePixel(x, y, scene, invViewMat); // c[i] = c[i] + Vec(clamp(r.x),clamp(r.y),clamp(r.z))*.25;
+                    intensityValues[offset] = tracePixel(x, y, scene, invViewMat, sx, sy); // c[i] = c[i] + Vec(clamp(r.x),clamp(r.y),clamp(r.z))*.25;
 
                 }
             }
@@ -47,32 +50,59 @@ void PathTracer::traceScene(QRgb *imageData, const Scene& scene)
     toneMap(imageData, intensityValues);
 }
 
-Vector3f PathTracer::tracePixel(int x, int y, const Scene& scene, const Matrix4f &invViewMatrix)
+Vector3f PathTracer::tracePixel(int x, int y, const Scene& scene, const Matrix4f &invViewMatrix, int sx, int sy)
 {
+    Vector3f L(0, 0, 0); //radiance
+    Vector3f p(0, 0, 0); //cam.o (camera position)
+    uint depth = 0;
+    unsigned short Xi[3]={0,0,y*y*y};
+    float xcom, ycom;
+    double r1, r2, dx, dy;
+
     for(int s = 0; s < m_num_samples; s++)
     {
 
-    }
-    Vector3f p(0, 0, 0); //cam.o (camera position)
-    //             cx  =     w      ,       cy =             , cam.d.z = -1
-    Vector3f d((2.f * x / m_width) - 1, 1 - (2.f * y / m_height), -1); // Vec d
-    d.normalize();
+        r1 = 2 * erand48(Xi);
+        dx=r1<1 ? qSqrt(r1)-1: 1-qSqrt(2-r1);
+        r2=2*erand48(Xi);
+        dy=r2<1 ? qSqrt(r2)-1: 1-qSqrt(2-r2);
 
-    Ray r(p, d);
-    r = r.transform(invViewMatrix);
-    return traceRay(r, scene);
+        // Vec d = cx * ( ( (sx+.5 + dx)/2 + x)/w - .5) + cy * ( ( (sy+.5 + dy)/2 + y)/h - .5) + cam.d;
+        // (w/h) * (  ( x + (sx+.5 + dx)/2 ) / m_width - .5  )
+        xcom = x + 0.5 * sx + 0.25 + 0.5 * dx;
+        ycom = y + 0.5 * sy + 0.25 + 0.5 * dy;
+
+        //             cx  =     w      ,       cy =             , cam.d.z = -1
+        Vector3f d((2.f * xcom / m_width) - 1, 1 - (2.f * ycom / m_height), -1); // Vec d
+        d.normalize();
+
+        Ray r(p, d); // Ray(cam.o+d*140, d.norm())
+        r = r.transform(invViewMatrix);
+
+        L += traceRay(r, scene, depth); // r = r + radiance( Ray(cam.o+d*140, d.norm()) ,0,Xi);
+    }
+
+    L = L * (1./m_num_samples);
+
+    return L;
 }
 
-Vector3f PathTracer::traceRay(const Ray& r, const Scene& scene)
+Vector3f PathTracer::traceRay(const Ray& r, const Scene& scene, uint depth)
 {
     IntersectionInfo i;
     Ray ray(r);
     if(scene.getIntersection(ray, &i)) {
           //** Example code for accessing materials provided by a .mtl file **
-//        const Triangle *t = static_cast<const Triangle *>(i.data);//Get the triangle in the mesh that was intersected
-//        const tinyobj::material_t& mat = t->getMaterial();//Get the material of the triangle from the mesh
-//        const tinyobj::real_t *d = mat.diffuse;//Diffuse color as array of floats
-//        const std::string diffuseTex = mat.diffuse_texname;//Diffuse texture name
+        const Triangle *t = static_cast<const Triangle *>(i.data);//Get the triangle in the mesh that was intersected
+        const tinyobj::material_t& mat = t->getMaterial();//Get the material of the triangle from the mesh
+        const tinyobj::real_t *diffuse = mat.diffuse;//Diffuse color as array of floats
+        const tinyobj::real_t *emission = mat.emission;
+        const std::string diffuseTex = mat.diffuse_texname;//Diffuse texture name
+
+        std::cout << "mat.diffuse = " << mat.diffuse << std::endl;
+        std::cout << "mat.emission = " << mat.emission << std::endl;
+        std::cout << "i.hit = " << i.hit << std::endl;
+
         return Vector3f(1, 1, 1);
     } else {
         return Vector3f(0, 0, 0);
