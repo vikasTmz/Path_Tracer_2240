@@ -6,6 +6,7 @@
 #include <emmintrin.h>
 #include <pmmintrin.h>
 #include "Log.h"
+#include <x86intrin.h>
 
 // SSE Vector object
 struct Vector3 {

@@ -1,27 +1,46 @@
 #include "pathtracer.h"
 
 #include <iostream>
+#include <algorithm>
 
 #include <Eigen/Dense>
 
 #include <util/CS123Common.h>
 
+double GAMMA_CORR = 0.454545455;
+
 using namespace Eigen;
 
-PathTracer::PathTracer(int width, int height)
-    : m_width(width), m_height(height)
+PathTracer::PathTracer(int width, int height, quint16 num_samples)
+    : m_width(width), m_height(height), m_num_samples(num_samples)
 {
+}
+
+template <typename T>
+T clamp(const T& v, const T& lower, const T& upper) {
+    assert( !(upper < lower) );
+    return (v < lower) ? lower : (upper < v) ? upper : v;
 }
 
 void PathTracer::traceScene(QRgb *imageData, const Scene& scene)
 {
     std::vector<Vector3f> intensityValues(m_width * m_height);
     Matrix4f invViewMat = (scene.getCamera().getScaleMatrix() * scene.getCamera().getViewMatrix()).inverse();
-    for(int y = 0; y < m_height; ++y) {
+    for(int y = 0; y < m_height; ++y)
+    {
         //#pragma omp parallel for
-        for(int x = 0; x < m_width; ++x) {
-            int offset = x + (y * m_width);
-            intensityValues[offset] = tracePixel(x, y, scene, invViewMat);
+        for(int x = 0; x < m_width; ++x)
+        {
+            int offset = x + (y * m_width); // i=(h-y-1)*w+x
+            for(int sy = 0; sy < 2; sy++)
+            {
+                for(int sx = 0; sx < 2; sx++)
+                {
+
+                        intensityValues[offset] += tracePixel(x, y, scene, invViewMat); // c[i] = c[i] + Vec(clamp(r.x),clamp(r.y),clamp(r.z))*.25;
+
+                }
+            }
         }
     }
 
@@ -30,8 +49,13 @@ void PathTracer::traceScene(QRgb *imageData, const Scene& scene)
 
 Vector3f PathTracer::tracePixel(int x, int y, const Scene& scene, const Matrix4f &invViewMatrix)
 {
-    Vector3f p(0, 0, 0);
-    Vector3f d((2.f * x / m_width) - 1, 1 - (2.f * y / m_height), -1);
+    for(int s = 0; s < m_num_samples; s++)
+    {
+
+    }
+    Vector3f p(0, 0, 0); //cam.o (camera position)
+    //             cx  =     w      ,       cy =             , cam.d.z = -1
+    Vector3f d((2.f * x / m_width) - 1, 1 - (2.f * y / m_height), -1); // Vec d
     d.normalize();
 
     Ray r(p, d);
@@ -55,11 +79,20 @@ Vector3f PathTracer::traceRay(const Ray& r, const Scene& scene)
     }
 }
 
+int clampIntensity(float v){
+    v = clamp(v,0.0f,1.0f);
+    return (int)(255 * qPow( v, GAMMA_CORR ) + 0.5);
+}
+
 void PathTracer::toneMap(QRgb *imageData, std::vector<Vector3f> &intensityValues) {
     for(int y = 0; y < m_height; ++y) {
         for(int x = 0; x < m_width; ++x) {
             int offset = x + (y * m_width);
-            imageData[offset] = intensityValues[offset].norm() > 0 ? qRgb(255, 255, 255) : qRgb(40, 40, 40);
+            std::cout << clampIntensity(intensityValues[offset](0)) << std::endl;
+            imageData[offset] = qRgb(clampIntensity(intensityValues[offset](0)),
+                                     clampIntensity(intensityValues[offset](1)),
+                                     clampIntensity(intensityValues[offset](2)));
+//            imageData[offset] = intensityValues[offset].norm() > 0 ? qRgb(255, 255, 255) : qRgb(40, 40, 40);
         }
     }
 
