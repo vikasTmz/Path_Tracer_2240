@@ -32,6 +32,8 @@ public:
          const std::vector<tinyobj::material_t> &materials);
 
     virtual bool getIntersection(const Ray &ray, IntersectionInfo *intersection) const;
+    virtual Eigen::Vector3f sample() const override;
+    virtual float getSurfaceArea() const override;
 
     virtual Eigen::Vector3f getNormal(const IntersectionInfo &I) const;
 
@@ -63,6 +65,7 @@ private:
     std::vector<tinyobj::material_t> _materials;
 
     BVH *_meshBvh;
+    float m_sa;
 
     Eigen::Vector3f _centroid;
 

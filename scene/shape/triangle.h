@@ -14,6 +14,8 @@ public:
              int index);
 
     virtual bool getIntersection(const Ray &ray, IntersectionInfo *intersection) const;
+    virtual Eigen::Vector3f sample() const;
+    virtual float getSurfaceArea() const;
 
     virtual Eigen::Vector3f getNormal(const IntersectionInfo &I) const;
     virtual Eigen::Vector3f getNormal(const Eigen::Vector3f &p) const;
@@ -34,6 +36,7 @@ private:
     tinyobj::material_t m_material;
 
     int m_index;
+    float m_sa;
 
     BBox _bbox;
 

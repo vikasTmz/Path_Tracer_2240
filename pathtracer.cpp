@@ -22,6 +22,13 @@ T clamp(const T& v, const T& lower, const T& upper) {
     return (v < lower) ? lower : (upper < v) ? upper : v;
 }
 
+std::default_random_engine rnd(1);
+std::uniform_real_distribution<float> dis(0, 1);
+
+float PathTracer::random() {
+    return dis(rnd);
+}
+
 //double erand48(unsigned short xsubi[3]) {
 //    return (double)rand() / (double)RAND_MAX;
 //}
@@ -31,21 +38,21 @@ void PathTracer::traceScene(QRgb *imageData, const Scene& scene)
     std::vector<Vector3f> intensityValues(m_width * m_height);
     Matrix4f invViewMat = (scene.getCamera().getScaleMatrix() * scene.getCamera().getViewMatrix()).inverse();
 
-    #pragma omp parallel for collapse(2)
+//    #pragma omp parallel for collapse(2)
+    #pragma omp parallel for schedule(dynamic, 1)
     for(int y = 0; y < m_height; ++y)
     {
-        //#pragma omp parallel for
         for(int x = 0; x < m_width; ++x)
         {
             int offset = x + (y * m_width); // i=(h-y-1)*w+x
-            for(int sy = 0; sy < 2; sy++)
-            {
-                for(int sx = 0; sx < 2; sx++)
-                {
-                    intensityValues[offset] = tracePixel(x, y, scene, invViewMat, sx, sy); // c[i] = c[i] + Vec(clamp(r.x),clamp(r.y),clamp(r.z))*.25;
+//            for(int sy = 0; sy < 2; sy++)
+//            {
+//                for(int sx = 0; sx < 2; sx++)
+//                {
+            intensityValues[offset] = tracePixel(x, y, scene, invViewMat, 0, 0); // c[i] = c[i] + Vec(clamp(r.x),clamp(r.y),clamp(r.z))*.25;
 
-                }
-            }
+//                }
+//            }
         }
     }
 
@@ -114,13 +121,17 @@ void cosineSampleHemisphere(const Vector3f &normal, Vector3f &wi, float &pdf, un
 }
 
 // Possible bugs
-//Vector3f directLighting(const Vector3f& hit, const Vector3f& normal, const Scene& scene) {
-//    Vector3f intensity(0, 0, 0);
+Vector3f directLighting(const Vector3f& hit, const Vector3f& normal, const Scene& scene) {
+    Vector3f intensity(0, 0, 0);
 
-//    for (Object* light : *scene.lights) {
-////        Vector3f lightPoint = Vector3f(light->transform);// * Vector4f(light->sample(), 1));
+    for (Object* light : *scene.lights) {
+        Vector3f lightSample = light->sample();
+        Vector4f lightSample4d = Vector4f(lightSample[0], lightSample[1], lightSample[2], 1);
+        std::cout << light->transform << std::endl;
+//        Vector3f lightPoint = Vector3f(light->transform() * Vector4f(light->sample(), 1));
+//        Vector3f lightPoint = light->transform() * lightSample;
 
-//        Vector3f toLight = (hit);
+//        Vector3f toLight = (lightPoint - hit);
 //        float distSquare = qPow(toLight[0],2) + qPow(toLight[1],2) + qPow(toLight[2],2);
 //        toLight.normalize();
 
@@ -137,10 +148,10 @@ void cosineSampleHemisphere(const Vector3f &normal, Vector3f &wi, float &pdf, un
 
 //            intensity += Vector3f(mat.emission[0], mat.emission[1], mat.emission[2]) * (light->getSurfaceArea() * ndotl * qAbs(toLight.dot((t->getNormal(i)).normalized() )) / distSquare);
 //        }
-//    }
+    }
 
-//    return intensity;
-//}
+    return intensity;
+}
 //Vector3f directLighting(Vector3f p, const Vector3f pn, const tinyobj::material_t& pmat, int pmat_type, Ray p_rin, const Scene &scene){
 //    /* Sample direct light rays from emissive triangles loaded in the scene.
 //       Args:
@@ -230,8 +241,9 @@ Vector3f PathTracer::traceRay(const Ray& r, const Scene& scene, uint depth, unsi
                 cosineSampleHemisphere(normal, wi, pdf, Xi);
                 const float illum_scale = wi.dot(normal) / (pdf * pdf_rr);
 //                L += directLighting(i.hit, normal, mat, mat.illum, ray, scene) * illum_scale * albedo;
-//                L += directLighting(i.hit, normal, scene) * illum_scale * albedo;
+                L += directLighting(i.hit, normal, scene) * illum_scale;
                 L += traceRay(Ray(i.hit + FLOAT_EPSILON * wi, wi), scene, depth + 1, Xi) * illum_scale;
+//                L *= albedo;
 
             }
         }

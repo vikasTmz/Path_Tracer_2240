@@ -33,7 +33,7 @@ public:
     const std::vector<CS123SceneLightData>& getLights();
 
     bool getIntersection(const Ray& ray, IntersectionInfo* I) const;
-//    std::vector<Object *> *lights;
+    std::vector<Object *> *lights;
 
 private:
 

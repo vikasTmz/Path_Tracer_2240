@@ -29,7 +29,7 @@ Scene::~Scene()
     }
     delete _objects;
     delete m_bvh;
-//    delete lights;
+    delete lights;
 }
 
 bool Scene::load(QString filename, Scene **scenePointer)
@@ -87,13 +87,13 @@ bool Scene::parseTree(CS123SceneNode *root, Scene *scene, const std::string &bas
     scene->_objects = objects;
     scene->setBVH(*bvh);
 
-//    std::vector<Object *> *lights = new std::vector<Object *>;
-//    for (Object* obj : *objects) {
-//            if (obj->isLight) {
-//                lights->push_back(obj);
-//            }
-//        }
-//    scene->lights = lights;
+    std::vector<Object *> *lights = new std::vector<Object *>;
+    for (Object* obj : *objects) {
+            if (obj->isLight) {
+                lights->push_back(obj);
+            }
+        }
+    scene->lights = lights;
 
     return true;
 }

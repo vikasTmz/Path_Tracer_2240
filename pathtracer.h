@@ -14,6 +14,7 @@ public:
     PathTracer(int width, int height, quint16 num_samples);
 
     void traceScene(QRgb *imageData, const Scene &scene);
+    static float random();
 
 private:
     int m_width, m_height;

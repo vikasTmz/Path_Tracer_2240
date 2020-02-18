@@ -1,8 +1,17 @@
 #include "triangle.h"
+#include "pathtracer.h"
 
 #include "util/CS123Common.h"
 
 using namespace Eigen;
+using namespace std;
+
+//default_random_engine rnd(1);
+//uniform_real_distribution<float> dis(0, 1);
+
+//float random() {
+//    return dis(rnd);
+//}
 
 Triangle::Triangle()
 {
@@ -15,6 +24,9 @@ Triangle::Triangle(Vector3f v1, Vector3f v2, Vector3f v3, Vector3f n1, Vector3f 
     _bbox.setP(_v1);
     _bbox.expandToInclude(_v2);
     _bbox.expandToInclude(_v3);
+
+    Vector3f temp = (v1 - v3).cross(v2 - v3);
+    m_sa = qSqrt(qPow(temp[0],2) + qPow(temp[1],2) + qPow(temp[2],2));
 }
 
 bool Triangle::getIntersection(const Ray &ray, IntersectionInfo *intersection) const
@@ -52,6 +64,16 @@ bool Triangle::getIntersection(const Ray &ray, IntersectionInfo *intersection) c
     }
 }
 
+Vector3f Triangle::sample() const {
+    float sr1 = qSqrt(PathTracer::random());
+    float r2 = PathTracer::random();
+
+    return (1.f - sr1)*_v1 + sr1*(1.f - r2)*_v2 + sr1*r2*_v3;
+}
+
+float Triangle::getSurfaceArea() const {
+    return m_sa;
+}
 
 Vector3f Triangle::getNormal(const IntersectionInfo &I) const
 {

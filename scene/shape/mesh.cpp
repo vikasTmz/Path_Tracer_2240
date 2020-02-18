@@ -1,10 +1,18 @@
 #include "mesh.h"
+#include "pathtracer.h"
 
 
 #include <iostream>
 
 using namespace Eigen;
 using namespace std;
+
+//default_random_engine rnd(1);
+//uniform_real_distribution<float> dis(0, 1);
+
+////float random() {
+////    return dis(rnd);
+////}
 
 void Mesh::init(const std::vector<Vector3f> &vertices,
            const std::vector<Vector3f> &normals,
@@ -45,6 +53,24 @@ bool Mesh::getIntersection(const Ray &ray, IntersectionInfo *intersection) const
     }
     return false;
 }
+
+Vector3f Mesh::sample() const {
+    const float r1 = PathTracer::random();
+    float indsa = r1 * m_sa;
+    unsigned int ind;
+
+    for (ind = 0; ind < _faces.size() - 1; ++ind) {
+        indsa -= _triangles[ind].getSurfaceArea();
+        if (indsa < 0) break;
+    }
+
+    return _triangles[ind].sample();
+}
+
+float Mesh::getSurfaceArea() const {
+    return m_sa;
+}
+
 
 Vector3f Mesh::getNormal(const IntersectionInfo &I) const
 {
@@ -115,6 +141,7 @@ void Mesh::calculateMeshStats()
 
 void Mesh::createMeshBVH()
 {
+    m_sa = 0;
     _triangles = new Triangle[_faces.size()];
     _objects = new std::vector<Object *>;
     _objects->resize(_faces.size());
@@ -129,6 +156,8 @@ void Mesh::createMeshBVH()
         _triangles[i] = Triangle(v1, v2, v3, n1, n2, n3, i);
         _triangles[i].setMaterial(getMaterial(i));
         (*_objects)[i] = &_triangles[i];
+
+        m_sa += _triangles[i].getSurfaceArea();
     }
 
     _meshBvh = new BVH(_objects);
