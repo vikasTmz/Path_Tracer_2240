@@ -64,18 +64,20 @@ Vector3f PathTracer::tracePixel(int x, int y, const Scene& scene, const Matrix4f
     for(int s = 0; s < m_num_samples; s++)
     {
 
-        r1 = 2 * erand48(Xi);
-        dx=r1<1 ? qSqrt(r1)-1: 1-qSqrt(2-r1);
-        r2=2*erand48(Xi);
-        dy=r2<1 ? qSqrt(r2)-1: 1-qSqrt(2-r2);
+//        r1 = 2 * erand48(Xi);
+//        dx=r1<1 ? qSqrt(r1)-1: 1-qSqrt(2-r1);
+//        r2=2*erand48(Xi);
+//        dy=r2<1 ? qSqrt(r2)-1: 1-qSqrt(2-r2);
 
-        // Vec d = cx * ( ( (sx+.5 + dx)/2 + x)/w - .5) + cy * ( ( (sy+.5 + dy)/2 + y)/h - .5) + cam.d;
-        // (w/h) * (  ( x + (sx+.5 + dx)/2 ) / m_width - .5  )
-        xcom = x + 0.5 * sx + 0.25 + 0.5 * dx;
-        ycom = y + 0.5 * sy + 0.25 + 0.5 * dy;
+//        // Vec d = cx * ( ( (sx+.5 + dx)/2 + x)/w - .5) + cy * ( ( (sy+.5 + dy)/2 + y)/h - .5) + cam.d;
+//        // (w/h) * (  ( x + (sx+.5 + dx)/2 ) / m_width - .5  )
+//        xcom = x + 0.5 * sx + 0.25 + 0.5 * dx;
+//        ycom = y + 0.5 * sy + 0.25 + 0.5 * dy;
 
-        //             cx  =     w      ,       cy =             , cam.d.z = -1
-        Vector3f d((2.f * xcom / m_width) - 1, 1 - (2.f * ycom / m_height), -1); // Vec d
+//        //             cx  =     w      ,       cy =             , cam.d.z = -1
+//        Vector3f d((2.f * xcom / m_width) - 1, 1 - (2.f * ycom / m_height), -1); // Vec d
+//        d.normalize();
+        Vector3f d((2.f * x / m_width) - 1, 1 - (2.f * y / m_height), -1); // Vec d
         d.normalize();
 
         Ray r(p, d); // Ray(cam.o+d*140, d.norm())
@@ -89,11 +91,62 @@ Vector3f PathTracer::tracePixel(int x, int y, const Scene& scene, const Matrix4f
     return out;
 }
 
+Vector3f tangentConvert(const Vector3f& pointdir, const Vector3f& normal) {
+    Vector3f tangent = qFabs(normal[0]) > qFabs(normal[1]) ? Vector3f(normal[2], 0, -normal[0]) : Vector3f(0, -normal[2], normal[1]);
+    tangent.normalize();
+    Vector3f bitangent = normal.cross(tangent);
+
+    return Vector3f(pointdir[0] * bitangent[0] + pointdir[1] * normal[0] + pointdir[2] * tangent[0],
+                    pointdir[0] * bitangent[1] + pointdir[1] * normal[1] + pointdir[2] * tangent[1],
+                    pointdir[0] * bitangent[2] + pointdir[1] * normal[2] + pointdir[2] * tangent[2]).normalized();
+}
+
+void cosineSampleHemisphere(const Vector3f &normal, Vector3f &wi, float &pdf)
+{
+    double r1 = erand48(Xi);
+    double r2 = erand48(Xi);
+
+    float phi = 2.f * EIGEN_PI * r1;
+    float sr2 = qSqrt(r2);
+
+    wi = tangentConvert(Vector3f(sr2 * qCos(phi), qSqrt(1.0f - r2), sr2 * qSin(phi)).normalized(), normal);
+    pdf = normal.dot(wi) / EIGEN_PI;
+}
+
+// Possible bugs
+Vector3f directLighting(const Vector3f& hit, const Vector3f& normal, const Scene& scene) {
+    Vector3f intensity(0, 0, 0);
+
+    for (Object* light : *scene.lights) {
+        Vector3f lightPoint = (light->transform * glm::vec4(light->sample(), 1)).xyz();
+
+        Vector3f toLight = (lightPoint - hit);
+        float distSquare = glm::length2(toLight);
+        toLight = glm::normalize(toLight);
+
+        IntersectionInfo i;
+        if (scene.getBVH().getIntersection(Ray(hit + toLight*FLOAT_EPSILON, toLight), &i, false) && i.object == light) {
+            const Mesh * m = static_cast<const Mesh *>(i.object);
+            const Triangle *t = static_cast<const Triangle *>(i.data);
+            const tinyobj::material_t& mat = m->getMaterial(t->getIndex());
+
+            if (glm::dot(toLight, t->getNormal(i)) > 0.f) continue;
+            float ndotl = glm::clamp(glm::dot(toLight, normal), 0.f, 1.f);
+
+            intensity += Vector3f(mat.emission[0], mat.emission[1], mat.emission[2]) * (light->getSurfaceArea() * ndotl * glm::abs(glm::dot(toLight, glm::normalize(t->getNormal(i)))) / distSquare);
+        }
+    }
+
+    return intensity;
+}
+
 Vector3f PathTracer::traceRay(const Ray& r, const Scene& scene, uint depth, unsigned short *Xi)
 {
+    Vector3f L = Vector3f(0,0,0); // radiance
+
     IntersectionInfo i;
-    Ray ray(r);
-    if(scene.getIntersection(ray, &i) && depth <= 10) {
+    Ray ray(r);                             // maxdepth
+    if(scene.getIntersection(ray, &i) && depth < 10) {
 
           //** Example code for accessing materials provided by a .mtl file **
         const Mesh *m = static_cast<const Mesh *>(i.object);
@@ -103,44 +156,66 @@ Vector3f PathTracer::traceRay(const Ray& r, const Scene& scene, uint depth, unsi
         const tinyobj::real_t *diffuse = mat.diffuse;//Diffuse color as array of floats
         const tinyobj::real_t *emission = mat.emission;
 
-        Vector3f normal = t->getNormal(i).normalize(); // surface normal   ,  n
+        if (!depth)
+            L +=Vector3f(emission);
+
+        Vector3f normal = t->getNormal(i);
+        normal.normalize(); // surface normal   ,  n
         Vector3f surf_normal = normal.dot(r.d) < 0 ? normal : -normal ; // surface normal fixed for orientation , nl
-
-        Vector3f L = Vector3f(diffuse[0], diffuse[1], diffuse[2]); // Vec f = obj.c;
-        double p = L[0] > L[1] && L[0] > L[2] ? L[0] : L[1] > L[2] ? L[1] : L[2];
-
-        // Russian roulette termination.
-        // If random number between 0 and 1 is > p, terminate and return hit object's emmission
-
-        if (++depth > 5)
-        {
-            if (erand48(Xi) < p * 0.9)
-            { // Multiply by 0.9 to avoid infinite loop with colours of 1.0
-                L = L * (0.9 / p);
-            }
-            else
-            {
-                return Vector3f(emission[0], emission[1], emission[2]);
-            }
-        }
 
         // Diffuse
         if (mat.illum == 2)
-        {
-            double r1 = 2 * EIGEN_PI * erand48(Xi);
-            double r2 = erand48(Xi);
-            double r2s = sqrt(r2);
-            Vector3f u = ( ( qFabs(surf_normal[0]) > 0.1 ? Vector2f(0,1) : VectorXf(1) ) % surf_normal ).normalize();
-            Vector3f v = surf_normal % u;
-            Vector3f d = (u * qCos(r1) * r2s + v * qSin(r1) * r2s + surf_normal * qSqrt(1 - r2)).normalize();
+        {                           // mindepth
+            const float pdf_rr = depth < 1 ? 1.0f : qMin(qMax(diffuse[0], qMax(diffuse[1], diffuse[2])), 0.99f);
+            Vector3f albedo = Vector3f(diffuse) / EIGEN_PI;
+            if (erand48(Xi) < pdf_rr)
+            {
+                Vector3f wi;
+                float pdf;
+                cosineSampleHemisphere(normal, wi, pdf);
+                const float illum_scale = wi.dot(normal) / (pdf * pdf_rr);
+                L += directLighting(i.hit, normal, scene) * illum_scale * albedo;
+                L += traceRay(Ray(i.hit + FLOAT_EPSILON * wi, wi), scene, depth + 1, Xi) * illum_scale;
 
+            }
         }
+//        Vector3f L = Vector3f(diffuse[0], diffuse[1], diffuse[2]); // Vec f = obj.c;
+//        double p = L[0] > L[1] && L[0] > L[2] ? L[0] : L[1] > L[2] ? L[1] : L[2];
+
+//        // Russian roulette termination.
+//        // If random number between 0 and 1 is > p, terminate and return hit object's emmission
+
+//        if (++depth > 5)
+//        {
+//            if (erand48(Xi) < p * 0.9)
+//            { // Multiply by 0.9 to avoid infinite loop with colours of 1.0
+//                L = L * (0.9 / p);
+//            }
+//            else
+//            {
+//                return Vector3f(emission[0], emission[1], emission[2]);
+//            }
+//        }
+
+//        // Diffuse
+//        if (mat.illum == 2)
+//        {
+////            double r1 = 2 * EIGEN_PI * erand48(Xi);
+////            double r2 = erand48(Xi);
+////            double r2s = sqrt(r2);
+////            Vector3f u = ( ( qFabs(surf_normal[0]) > 0.1 ? Vector2f(0,1) : VectorXf(1) ) % surf_normal ).normalize();
+////            Vector3f v = surf_normal % u;
+////            Vector3f d = (u * qCos(r1) * r2s + v * qSin(r1) * r2s + surf_normal * qSqrt(1 - r2)).normalize();
+
+//        }
 
 
 //        std::cout << "i.hit = " << i.hit << std::endl;
 
-        return Vector3f(1, 1, 1);
-    } else {
+        return L;
+    }
+    else
+    {
         return Vector3f(0, 0, 0);
     }
 }
