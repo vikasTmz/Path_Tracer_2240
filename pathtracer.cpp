@@ -30,6 +30,8 @@ void PathTracer::traceScene(QRgb *imageData, const Scene& scene)
 {
     std::vector<Vector3f> intensityValues(m_width * m_height);
     Matrix4f invViewMat = (scene.getCamera().getScaleMatrix() * scene.getCamera().getViewMatrix()).inverse();
+
+    #pragma omp parallel for collapse(2)
     for(int y = 0; y < m_height; ++y)
     {
         //#pragma omp parallel for
@@ -52,7 +54,7 @@ void PathTracer::traceScene(QRgb *imageData, const Scene& scene)
 
 Vector3f PathTracer::tracePixel(int x, int y, const Scene& scene, const Matrix4f &invViewMatrix, int sx, int sy)
 {
-    Vector3f L(0, 0, 0); //radiance
+    Vector3f out(0, 0, 0);
     Vector3f p(0, 0, 0); //cam.o (camera position)
     uint depth = 0;
     unsigned short Xi[3]={0,0,y*y*y};
@@ -79,29 +81,63 @@ Vector3f PathTracer::tracePixel(int x, int y, const Scene& scene, const Matrix4f
         Ray r(p, d); // Ray(cam.o+d*140, d.norm())
         r = r.transform(invViewMatrix);
 
-        L += traceRay(r, scene, depth); // r = r + radiance( Ray(cam.o+d*140, d.norm()) ,0,Xi);
+        out += traceRay(r, scene, depth, Xi); // r = r + radiance( Ray(cam.o+d*140, d.norm()) ,0,Xi);
     }
 
-    L = L * (1./m_num_samples);
+    out = out * (1./m_num_samples);
 
-    return L;
+    return out;
 }
 
-Vector3f PathTracer::traceRay(const Ray& r, const Scene& scene, uint depth)
+Vector3f PathTracer::traceRay(const Ray& r, const Scene& scene, uint depth, unsigned short *Xi)
 {
     IntersectionInfo i;
     Ray ray(r);
-    if(scene.getIntersection(ray, &i)) {
+    if(scene.getIntersection(ray, &i) && depth <= 10) {
+
           //** Example code for accessing materials provided by a .mtl file **
+        const Mesh *m = static_cast<const Mesh *>(i.object);
         const Triangle *t = static_cast<const Triangle *>(i.data);//Get the triangle in the mesh that was intersected
         const tinyobj::material_t& mat = t->getMaterial();//Get the material of the triangle from the mesh
+//        const std::string diffuseTex = mat.diffuse_texname;//Diffuse texture name
         const tinyobj::real_t *diffuse = mat.diffuse;//Diffuse color as array of floats
         const tinyobj::real_t *emission = mat.emission;
-        const std::string diffuseTex = mat.diffuse_texname;//Diffuse texture name
 
-        std::cout << "mat.diffuse = " << mat.diffuse << std::endl;
-        std::cout << "mat.emission = " << mat.emission << std::endl;
-        std::cout << "i.hit = " << i.hit << std::endl;
+        Vector3f normal = t->getNormal(i).normalize(); // surface normal   ,  n
+        Vector3f surf_normal = normal.dot(r.d) < 0 ? normal : -normal ; // surface normal fixed for orientation , nl
+
+        Vector3f L = Vector3f(diffuse[0], diffuse[1], diffuse[2]); // Vec f = obj.c;
+        double p = L[0] > L[1] && L[0] > L[2] ? L[0] : L[1] > L[2] ? L[1] : L[2];
+
+        // Russian roulette termination.
+        // If random number between 0 and 1 is > p, terminate and return hit object's emmission
+
+        if (++depth > 5)
+        {
+            if (erand48(Xi) < p * 0.9)
+            { // Multiply by 0.9 to avoid infinite loop with colours of 1.0
+                L = L * (0.9 / p);
+            }
+            else
+            {
+                return Vector3f(emission[0], emission[1], emission[2]);
+            }
+        }
+
+        // Diffuse
+        if (mat.illum == 2)
+        {
+            double r1 = 2 * EIGEN_PI * erand48(Xi);
+            double r2 = erand48(Xi);
+            double r2s = sqrt(r2);
+            Vector3f u = ( ( qFabs(surf_normal[0]) > 0.1 ? Vector2f(0,1) : VectorXf(1) ) % surf_normal ).normalize();
+            Vector3f v = surf_normal % u;
+            Vector3f d = (u * qCos(r1) * r2s + v * qSin(r1) * r2s + surf_normal * qSqrt(1 - r2)).normalize();
+
+        }
+
+
+//        std::cout << "i.hit = " << i.hit << std::endl;
 
         return Vector3f(1, 1, 1);
     } else {
@@ -118,7 +154,7 @@ void PathTracer::toneMap(QRgb *imageData, std::vector<Vector3f> &intensityValues
     for(int y = 0; y < m_height; ++y) {
         for(int x = 0; x < m_width; ++x) {
             int offset = x + (y * m_width);
-            std::cout << clampIntensity(intensityValues[offset](0)) << std::endl;
+//            std::cout << clampIntensity(intensityValues[offset](0)) << std::endl;
             imageData[offset] = qRgb(clampIntensity(intensityValues[offset](0)),
                                      clampIntensity(intensityValues[offset](1)),
                                      clampIntensity(intensityValues[offset](2)));
