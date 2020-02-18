@@ -42,6 +42,7 @@ void PathTracer::traceScene(QRgb *imageData, const Scene& scene)
     #pragma omp parallel for schedule(dynamic, 1)
     for(int y = 0; y < m_height; ++y)
     {
+        fprintf(stderr,"\rRendering (%d spp) %5.2f%%",m_num_samples*4,100.*y/(m_height-1));
         for(int x = 0; x < m_width; ++x)
         {
             int offset = x + (y * m_width); // i=(h-y-1)*w+x
@@ -49,8 +50,7 @@ void PathTracer::traceScene(QRgb *imageData, const Scene& scene)
 //            {
 //                for(int sx = 0; sx < 2; sx++)
 //                {
-            intensityValues[offset] = tracePixel(x, y, scene, invViewMat, 0, 0); // c[i] = c[i] + Vec(clamp(r.x),clamp(r.y),clamp(r.z))*.25;
-
+                    intensityValues[offset] = tracePixel(x, y, scene, invViewMat, 0, 0); // c[i] = c[i] + Vec(clamp(r.x),clamp(r.y),clamp(r.z))*.25;
 //                }
 //            }
         }
@@ -65,8 +65,8 @@ Vector3f PathTracer::tracePixel(int x, int y, const Scene& scene, const Matrix4f
     Vector3f p(0, 0, 0); //cam.o (camera position)
     uint depth = 0;
     unsigned short Xi[3]={0,0,y*y*y};
-    float xcom, ycom;
-    double r1, r2, dx, dy;
+//    float xcom, ycom;
+//    double r1, r2, dx, dy;
 
     for(int s = 0; s < m_num_samples; s++)
     {
@@ -153,59 +153,10 @@ Vector3f directLighting(const Vector3f& hit, const Vector3f& normal, const Scene
 
     return intensity;
 }
-//Vector3f directLighting(Vector3f p, const Vector3f pn, const tinyobj::material_t& pmat, int pmat_type, Ray p_rin, const Scene &scene){
-//    /* Sample direct light rays from emissive triangles loaded in the scene.
-//       Args:
-//       - p: intersection point where we sample direct lights from
-//       - pn: the normal at the intersection point
-//       - scene: the scene data
-//       Return:
-//       - dL: the direct light contribution divided by p(a) = 1/area
-//    */
 
-//    Vector3f dL = Vector3f(0,0,0);
-//    const tinyobj::real_t *d = pmat.diffuse; //Diffuse color as array of floats
-//    Vector3f pd = Vector3f(d[0], d[1], d[2]);
-//    std::vector<Triangle *> lights = scene.getEmissiveTriangles();
-
-
-//    for(int i =0 ;i < lights.size(); ++i){
-
-//        Vector3f pl = lights[i]->getRandomPointWithin();
-//        Vector3f rd = (pl - p).normalized();
-//        Ray ray2light(p, rd); //the ray from hit point to a sampled point in the light source
-
-//        IntersectionInfo li;
-//        if(scene.getIntersection(ray2light, &li)) {
-//            //check if shadowed
-//            const Triangle *t = static_cast<const Triangle *>(li.data);
-//            if(t->getIndex() == lights[i]->getIndex()){
-
-//                //get the parameters needed from this emissive triangle
-//                Vector3f e = Vector3f(lights[i]->getMaterial().emission[0], lights[i]->getMaterial().emission[1], lights[i]->getMaterial().emission[2]);
-
-//                const Vector3f ln = lights[i]->getNormal(li); //emissive triangle normal
-//                const Affine3f l_invNT = lights[i]->getInverseNormalTransform(); //emissive triangle invNormalTransform matrix
-//                const Vector3f world_ln = l_invNT * ln;
-
-//                float cos_p = qMin(1.f, qMax(0.f, pn.dot(ray2light.d))); //cosine term at p
-//                float cos_l = qMin(1.f, qMax(0.f, world_ln.dot(-ray2light.d))); //cosine term at the light
-//                float dist2 = qPow((pl - p).norm(), 2); //Question: Is this what is meant in the equation;
-//                float t_area = lights[i]->getArea();
-//                float c = ( cos_p * cos_l )/ dist2;
-
-//                //dL += ( e.array() * c * brdf(pmat, pmat_type, p_rin, ray2light, pn).array() ).matrix() / pa;
-//                dL += (e.array() * pd.array()).matrix() * c * t_area; //essentially divided by pdf = 1/area
-//                //dL += e * c * t_area; //essentially divided by pdf = 1/area
-
-//            }
-//        }
-//    }
-//    dL = dL / lights.size();
-
-//    return dL / lights.size();
-
-//}
+Vector3f vectmod(Vector3f a, Vector3f b) {
+    return Vector3f(a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]);
+}
 
 Vector3f PathTracer::traceRay(const Ray& r, const Scene& scene, uint depth, unsigned short *Xi)
 {
@@ -222,13 +173,18 @@ Vector3f PathTracer::traceRay(const Ray& r, const Scene& scene, uint depth, unsi
 //        const std::string diffuseTex = mat.diffuse_texname;//Diffuse texture name
         const tinyobj::real_t *diffuse = mat.diffuse;//Diffuse color as array of floats
         const tinyobj::real_t *emission = mat.emission;
+        const tinyobj::real_t *specular = mat.specular;
+
+/////////////////////////////////////////////////////////////////////////////////////
+//                  NEW  --- START
+/////////////////////////////////////////////////////////////////////////////////////
 
         if (!depth)
             L +=Vector3f(emission);
 
         Vector3f normal = t->getNormal(i);
         normal.normalize(); // surface normal   ,  n
-        Vector3f surf_normal = normal.dot(r.d) < 0 ? normal : -normal ; // surface normal fixed for orientation , nl
+        Vector3f surf_normal = normal.dot(ray.d) < 0 ? normal : -normal ; // surface normal fixed for orientation , nl
 
         // Diffuse
         if (mat.illum == 2)
@@ -241,48 +197,69 @@ Vector3f PathTracer::traceRay(const Ray& r, const Scene& scene, uint depth, unsi
                 float pdf;
                 cosineSampleHemisphere(normal, wi, pdf, Xi);
                 const float illum_scale = wi.dot(normal) / (pdf * pdf_rr);
-//                L += directLighting(i.hit, normal, mat, mat.illum, ray, scene) * illum_scale * albedo;
 
-                Vector3f directlight =  directLighting(i.hit, normal, scene) * illum_scale;
+                Vector3f directlight =  directLighting(i.hit, normal, scene);//* illum_scale;
                 Vector3f indirectlight = traceRay(Ray(i.hit + FLOAT_EPSILON * wi, wi), scene, depth + 1, Xi) * illum_scale;
                 L += (albedo.array() * directlight.array()).matrix();
                 L += (albedo.array() * indirectlight.array()).matrix();
-//                L += (directLighting(i.hit, normal, scene) + traceRay(Ray(i.hit + FLOAT_EPSILON * wi, wi), scene, depth + 1, Xi) *illum_scale)*albedo;
 
             }
         }
-//        Vector3f L = Vector3f(diffuse[0], diffuse[1], diffuse[2]); // Vec f = obj.c;
-//        double p = L[0] > L[1] && L[0] > L[2] ? L[0] : L[1] > L[2] ? L[1] : L[2];
 
-//        // Russian roulette termination.
-//        // If random number between 0 and 1 is > p, terminate and return hit object's emmission
+        // Perfect specular
+        else if (mat.illum == 5)
+        {
+            Vector3f albedo = Vector3f(1.0f, 1.0f, 1.0f);
+            const float pdf_rr = depth < 1 ? 1.0f : qMin(qMax(specular[0], qMax(specular[1], specular[2])), 0.99f);
+            if (erand48(Xi) < pdf_rr)
+            {
+              Vector3f refl = (ray.d - 2.f * normal * normal.dot(ray.d)).normalized();
+              if ( normal.dot(ray.d) >= 0.0f ) refl = ray.d;
+              Vector3f indirectlight = traceRay(Ray(i.hit + FLOAT_EPSILON * refl, refl), scene, depth + 1, Xi) / pdf_rr;
+              L += (albedo.array() * indirectlight.array()).matrix();
+            }
+        }
 
-//        if (++depth > 5)
-//        {
-//            if (erand48(Xi) < p * 0.9)
-//            { // Multiply by 0.9 to avoid infinite loop with colours of 1.0
-//                L = L * (0.9 / p);
-//            }
-//            else
-//            {
-//                return Vector3f(emission[0], emission[1], emission[2]);
-//            }
-//        }
+        // Refraction
+        else if (mat.illum == 7)
+        {
+            Vector3f albedo = Vector3f(1.0f, 1.0f, 1.0f);
+            const float pdf_rr = depth < 1 ? 1.f : 0.95f;
+            if (erand48(Xi) < pdf_rr) {
+                const Vector3f refl = (ray.d - 2.f * normal * normal.dot(ray.d)).normalized();
+                const float ni = 1.f;
+                const float nt = mat.ior;
+                const float ratio = normal.dot(ray.d) < 0 ? ni / nt : nt / ni;
 
-//        // Diffuse
-//        if (mat.illum == 2)
-//        {
-////            double r1 = 2 * EIGEN_PI * erand48(Xi);
-////            double r2 = erand48(Xi);
-////            double r2s = sqrt(r2);
-////            Vector3f u = ( ( qFabs(surf_normal[0]) > 0.1 ? Vector2f(0,1) : VectorXf(1) ) % surf_normal ).normalize();
-////            Vector3f v = surf_normal % u;
-////            Vector3f d = (u * qCos(r1) * r2s + v * qSin(r1) * r2s + surf_normal * qSqrt(1 - r2)).normalize();
+                const float costheta = ray.d.dot(surf_normal);
+                const float radicand = 1.f - ratio * ratio * (1.f - costheta*costheta);
 
-//        }
+                // TODO m_full
+                Vector3f indirectlight(0,0,0);
+                if (radicand < FLOAT_EPSILON) {
+                  indirectlight = traceRay(Ray(i.hit + FLOAT_EPSILON * refl, refl), scene, depth + 1, Xi) / pdf_rr;
+                } else {
+                    Vector3f refr;
+                    if (normal.dot(ray.d) < 0) {
+                        refr = ray.d * ratio - normal * (costheta * ratio + qSqrt(radicand));
+                    } else {
+                        refr = ray.d * ratio + normal * (costheta * ratio + qSqrt(radicand));
+                    }
+                    const float R0 = (nt - ni) * (nt - ni) / ((nt + ni) * (nt + ni));
+                    const float Rtheta = R0 + (1.f - R0) * qPow(1.f - (normal.dot(ray.d) < 0 ? -costheta : refr.dot(normal)), 5);
+                    if (erand48(Xi) < Rtheta) {
+                      indirectlight = traceRay(Ray(i.hit + FLOAT_EPSILON * refl, refl), scene, depth + 1, Xi) / pdf_rr;
+                    } else {
+                      indirectlight = traceRay(Ray(i.hit + FLOAT_EPSILON * refr, refr), scene, depth + 1, Xi) / pdf_rr;
+                    }
+                }
+                 L += (albedo.array() * indirectlight.array()).matrix();
+            }
 
-
-//        std::cout << "i.hit = " << i.hit << std::endl;
+        }
+/////////////////////////////////////////////////////////////////////////////////////
+//                  NEW  --- END
+/////////////////////////////////////////////////////////////////////////////////////
 
         return L;
     }
