@@ -101,7 +101,7 @@ Vector3f tangentConvert(const Vector3f& pointdir, const Vector3f& normal) {
                     pointdir[0] * bitangent[2] + pointdir[1] * normal[2] + pointdir[2] * tangent[2]).normalized();
 }
 
-void cosineSampleHemisphere(const Vector3f &normal, Vector3f &wi, float &pdf)
+void cosineSampleHemisphere(const Vector3f &normal, Vector3f &wi, float &pdf, unsigned short *Xi)
 {
     double r1 = erand48(Xi);
     double r2 = erand48(Xi);
@@ -114,31 +114,86 @@ void cosineSampleHemisphere(const Vector3f &normal, Vector3f &wi, float &pdf)
 }
 
 // Possible bugs
-Vector3f directLighting(const Vector3f& hit, const Vector3f& normal, const Scene& scene) {
-    Vector3f intensity(0, 0, 0);
+//Vector3f directLighting(const Vector3f& hit, const Vector3f& normal, const Scene& scene) {
+//    Vector3f intensity(0, 0, 0);
 
-    for (Object* light : *scene.lights) {
-        Vector3f lightPoint = (light->transform * glm::vec4(light->sample(), 1)).xyz();
+//    for (Object* light : *scene.lights) {
+////        Vector3f lightPoint = Vector3f(light->transform);// * Vector4f(light->sample(), 1));
 
-        Vector3f toLight = (lightPoint - hit);
-        float distSquare = glm::length2(toLight);
-        toLight = glm::normalize(toLight);
+//        Vector3f toLight = (hit);
+//        float distSquare = qPow(toLight[0],2) + qPow(toLight[1],2) + qPow(toLight[2],2);
+//        toLight.normalize();
 
-        IntersectionInfo i;
-        if (scene.getBVH().getIntersection(Ray(hit + toLight*FLOAT_EPSILON, toLight), &i, false) && i.object == light) {
-            const Mesh * m = static_cast<const Mesh *>(i.object);
-            const Triangle *t = static_cast<const Triangle *>(i.data);
-            const tinyobj::material_t& mat = m->getMaterial(t->getIndex());
+//        IntersectionInfo i;
+//        Ray newray(hit + toLight*FLOAT_EPSILON, toLight);
 
-            if (glm::dot(toLight, t->getNormal(i)) > 0.f) continue;
-            float ndotl = glm::clamp(glm::dot(toLight, normal), 0.f, 1.f);
+//        if (scene.getIntersection(newray, &i) && i.object == light) {
+//            const Mesh * m = static_cast<const Mesh *>(i.object);
+//            const Triangle *t = static_cast<const Triangle *>(i.data);
+//            const tinyobj::material_t& mat = m->getMaterial(t->getIndex());
 
-            intensity += Vector3f(mat.emission[0], mat.emission[1], mat.emission[2]) * (light->getSurfaceArea() * ndotl * glm::abs(glm::dot(toLight, glm::normalize(t->getNormal(i)))) / distSquare);
-        }
-    }
+//            if (toLight.dot(t->getNormal(i)) > 0.0f ) continue;
+//            float ndotl = clamp(toLight.dot(normal), 0.f, 1.f);
 
-    return intensity;
-}
+//            intensity += Vector3f(mat.emission[0], mat.emission[1], mat.emission[2]) * (light->getSurfaceArea() * ndotl * qAbs(toLight.dot((t->getNormal(i)).normalized() )) / distSquare);
+//        }
+//    }
+
+//    return intensity;
+//}
+//Vector3f directLighting(Vector3f p, const Vector3f pn, const tinyobj::material_t& pmat, int pmat_type, Ray p_rin, const Scene &scene){
+//    /* Sample direct light rays from emissive triangles loaded in the scene.
+//       Args:
+//       - p: intersection point where we sample direct lights from
+//       - pn: the normal at the intersection point
+//       - scene: the scene data
+//       Return:
+//       - dL: the direct light contribution divided by p(a) = 1/area
+//    */
+
+//    Vector3f dL = Vector3f(0,0,0);
+//    const tinyobj::real_t *d = pmat.diffuse; //Diffuse color as array of floats
+//    Vector3f pd = Vector3f(d[0], d[1], d[2]);
+//    std::vector<Triangle *> lights = scene.getEmissiveTriangles();
+
+
+//    for(int i =0 ;i < lights.size(); ++i){
+
+//        Vector3f pl = lights[i]->getRandomPointWithin();
+//        Vector3f rd = (pl - p).normalized();
+//        Ray ray2light(p, rd); //the ray from hit point to a sampled point in the light source
+
+//        IntersectionInfo li;
+//        if(scene.getIntersection(ray2light, &li)) {
+//            //check if shadowed
+//            const Triangle *t = static_cast<const Triangle *>(li.data);
+//            if(t->getIndex() == lights[i]->getIndex()){
+
+//                //get the parameters needed from this emissive triangle
+//                Vector3f e = Vector3f(lights[i]->getMaterial().emission[0], lights[i]->getMaterial().emission[1], lights[i]->getMaterial().emission[2]);
+
+//                const Vector3f ln = lights[i]->getNormal(li); //emissive triangle normal
+//                const Affine3f l_invNT = lights[i]->getInverseNormalTransform(); //emissive triangle invNormalTransform matrix
+//                const Vector3f world_ln = l_invNT * ln;
+
+//                float cos_p = qMin(1.f, qMax(0.f, pn.dot(ray2light.d))); //cosine term at p
+//                float cos_l = qMin(1.f, qMax(0.f, world_ln.dot(-ray2light.d))); //cosine term at the light
+//                float dist2 = qPow((pl - p).norm(), 2); //Question: Is this what is meant in the equation;
+//                float t_area = lights[i]->getArea();
+//                float c = ( cos_p * cos_l )/ dist2;
+
+//                //dL += ( e.array() * c * brdf(pmat, pmat_type, p_rin, ray2light, pn).array() ).matrix() / pa;
+//                dL += (e.array() * pd.array()).matrix() * c * t_area; //essentially divided by pdf = 1/area
+//                //dL += e * c * t_area; //essentially divided by pdf = 1/area
+
+//            }
+//        }
+//    }
+//    dL = dL / lights.size();
+
+//    return dL / lights.size();
+
+//}
 
 Vector3f PathTracer::traceRay(const Ray& r, const Scene& scene, uint depth, unsigned short *Xi)
 {
@@ -172,9 +227,10 @@ Vector3f PathTracer::traceRay(const Ray& r, const Scene& scene, uint depth, unsi
             {
                 Vector3f wi;
                 float pdf;
-                cosineSampleHemisphere(normal, wi, pdf);
+                cosineSampleHemisphere(normal, wi, pdf, Xi);
                 const float illum_scale = wi.dot(normal) / (pdf * pdf_rr);
-                L += directLighting(i.hit, normal, scene) * illum_scale * albedo;
+//                L += directLighting(i.hit, normal, mat, mat.illum, ray, scene) * illum_scale * albedo;
+//                L += directLighting(i.hit, normal, scene) * illum_scale * albedo;
                 L += traceRay(Ray(i.hit + FLOAT_EPSILON * wi, wi), scene, depth + 1, Xi) * illum_scale;
 
             }
@@ -221,8 +277,9 @@ Vector3f PathTracer::traceRay(const Ray& r, const Scene& scene, uint depth, unsi
 }
 
 int clampIntensity(float v){
-    v = clamp(v,0.0f,1.0f);
-    return (int)(255 * qPow( v, GAMMA_CORR ) + 0.5);
+//    v = clamp(v,0.0f,1.0f);
+//    return (int)(255.0f * qPow( v, GAMMA_CORR ) + 0.5);
+    return (int)(255.0f * v / (1.0f + v));
 }
 
 void PathTracer::toneMap(QRgb *imageData, std::vector<Vector3f> &intensityValues) {

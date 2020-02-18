@@ -20,15 +20,18 @@ struct Object {
       IntersectionInfo* intersection)
     const = 0;
 
+//  virtual Eigen::Vector3f sample() const = 0;
   //! Return an object normal based on an intersection
   virtual Eigen::Vector3f getNormal(const IntersectionInfo& I) const = 0;
 
+//  virtual float getSurfaceAreaObj() const = 0;
   //! Return a bounding box for this object
   virtual BBox getBBox() const = 0;
 
   //! Return the centroid for this object. (Used in BVH Sorting)
   virtual Eigen::Vector3f getCentroid() const = 0;
 
+//    bool isLight;
     CS123SceneMaterial material;
 
     virtual void setTransform(const Eigen::Affine3f transform) {
