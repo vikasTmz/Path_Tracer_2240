@@ -127,27 +127,28 @@ Vector3f directLighting(const Vector3f& hit, const Vector3f& normal, const Scene
     for (Object* light : *scene.lights) {
         Vector3f lightSample = light->sample();
         Vector4f lightSample4d = Vector4f(lightSample[0], lightSample[1], lightSample[2], 1);
-        std::cout << light->transform << std::endl;
+        Vector4f lightTransformVec = light->transform.matrix() * lightSample4d;
+
 //        Vector3f lightPoint = Vector3f(light->transform() * Vector4f(light->sample(), 1));
-//        Vector3f lightPoint = light->transform() * lightSample;
+        Vector3f lightPoint = Vector3f(lightTransformVec[0],lightTransformVec[1],lightTransformVec[2]);
 
-//        Vector3f toLight = (lightPoint - hit);
-//        float distSquare = qPow(toLight[0],2) + qPow(toLight[1],2) + qPow(toLight[2],2);
-//        toLight.normalize();
+        Vector3f toLight = (lightPoint - hit);
+        float distSquare = qPow(toLight[0],2) + qPow(toLight[1],2) + qPow(toLight[2],2);
+        toLight.normalize();
 
-//        IntersectionInfo i;
-//        Ray newray(hit + toLight*FLOAT_EPSILON, toLight);
+        IntersectionInfo i;
+        Ray newray(hit + toLight*FLOAT_EPSILON, toLight);
 
-//        if (scene.getIntersection(newray, &i) && i.object == light) {
-//            const Mesh * m = static_cast<const Mesh *>(i.object);
-//            const Triangle *t = static_cast<const Triangle *>(i.data);
-//            const tinyobj::material_t& mat = m->getMaterial(t->getIndex());
+        if (scene.getIntersection(newray, &i) && i.object == light) {
+            const Mesh * m = static_cast<const Mesh *>(i.object);
+            const Triangle *t = static_cast<const Triangle *>(i.data);
+            const tinyobj::material_t& mat = m->getMaterial(t->getIndex());
 
-//            if (toLight.dot(t->getNormal(i)) > 0.0f ) continue;
-//            float ndotl = clamp(toLight.dot(normal), 0.f, 1.f);
+            if (toLight.dot(t->getNormal(i)) > 0.0f ) continue;
+            float ndotl = clamp(toLight.dot(normal), 0.f, 1.f);
 
-//            intensity += Vector3f(mat.emission[0], mat.emission[1], mat.emission[2]) * (light->getSurfaceArea() * ndotl * qAbs(toLight.dot((t->getNormal(i)).normalized() )) / distSquare);
-//        }
+            intensity += Vector3f(mat.emission[0], mat.emission[1], mat.emission[2]) * (light->getSurfaceArea() * ndotl * qAbs(toLight.dot((t->getNormal(i)).normalized() )) / distSquare);
+        }
     }
 
     return intensity;
@@ -233,7 +234,7 @@ Vector3f PathTracer::traceRay(const Ray& r, const Scene& scene, uint depth, unsi
         if (mat.illum == 2)
         {                           // mindepth
             const float pdf_rr = depth < 1 ? 1.0f : qMin(qMax(diffuse[0], qMax(diffuse[1], diffuse[2])), 0.99f);
-            Vector3f albedo = Vector3f(diffuse) / EIGEN_PI;
+            Vector3f albedo = Vector3f(diffuse[0],diffuse[1],diffuse[3]) / EIGEN_PI;
             if (erand48(Xi) < pdf_rr)
             {
                 Vector3f wi;
@@ -241,9 +242,12 @@ Vector3f PathTracer::traceRay(const Ray& r, const Scene& scene, uint depth, unsi
                 cosineSampleHemisphere(normal, wi, pdf, Xi);
                 const float illum_scale = wi.dot(normal) / (pdf * pdf_rr);
 //                L += directLighting(i.hit, normal, mat, mat.illum, ray, scene) * illum_scale * albedo;
-                L += directLighting(i.hit, normal, scene) * illum_scale;
-                L += traceRay(Ray(i.hit + FLOAT_EPSILON * wi, wi), scene, depth + 1, Xi) * illum_scale;
-//                L *= albedo;
+
+                Vector3f directlight =  directLighting(i.hit, normal, scene) * illum_scale;
+                Vector3f indirectlight = traceRay(Ray(i.hit + FLOAT_EPSILON * wi, wi), scene, depth + 1, Xi) * illum_scale;
+                L += (albedo.array() * directlight.array()).matrix();
+                L += (albedo.array() * indirectlight.array()).matrix();
+//                L += (directLighting(i.hit, normal, scene) + traceRay(Ray(i.hit + FLOAT_EPSILON * wi, wi), scene, depth + 1, Xi) *illum_scale)*albedo;
 
             }
         }
