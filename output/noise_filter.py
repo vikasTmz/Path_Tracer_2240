@@ -1,10 +1,10 @@
 import numpy as np
 import cv2
 from matplotlib import pyplot as plt
-img = cv2.imread('rendered.png')
+img = cv2.imread('rendered_4500_diffuse.png')
 
-clean = cv2.fastNlMeansDenoising(img, 5.0, 10, 21)
-cv2.imwrite("filter.png", clean)
+clean = cv2.fastNlMeansDenoising(img, 2.0, 7, 21)
+cv2.imwrite("filter_4500_diffuse.png", clean)
 # create a list of first 5 frames
 # img = [cap.read()[1] for i in xrange(5)]
 # convert all to grayscale

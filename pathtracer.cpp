@@ -197,7 +197,7 @@ Vector3f PathTracer::traceRay(const Ray& r, const Scene& scene, uint depth, unsi
         if (mat.illum == 2)
         {                           // mindepth
             const float pdf_rr = depth < m_mindepth ? 1.0f : qMin(qMax(diffuse[0], qMax(diffuse[1], diffuse[2])), 0.99f);
-            Vector3f albedo = Vector3f(diffuse[0],diffuse[1],diffuse[3]) / EIGEN_PI;
+            Vector3f albedo = Vector3f(diffuse[0],diffuse[1],diffuse[2]) / EIGEN_PI;
             if (erand48(Xi) < pdf_rr)
             {
                 Vector3f wi;
