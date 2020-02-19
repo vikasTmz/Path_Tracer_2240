@@ -198,7 +198,7 @@ Vector3f PathTracer::traceRay(const Ray& r, const Scene& scene, uint depth, unsi
                 cosineSampleHemisphere(normal, wi, pdf, Xi);
                 const float illum_scale = wi.dot(normal) / (pdf * pdf_rr);
 
-                Vector3f directlight =  directLighting(i.hit, normal, scene);//* illum_scale;
+                Vector3f directlight =  directLighting(i.hit, normal, scene)* illum_scale;
                 Vector3f indirectlight = traceRay(Ray(i.hit + FLOAT_EPSILON * wi, wi), scene, depth + 1, Xi) * illum_scale;
                 L += (albedo.array() * directlight.array()).matrix();
                 L += (albedo.array() * indirectlight.array()).matrix();
