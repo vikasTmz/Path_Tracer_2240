@@ -19,11 +19,13 @@ int main(int argc, char *argv[])
     parser.addPositionalArgument("scene", "Scene file to be rendered");
     parser.addPositionalArgument("output", "Image file to write the rendered image to");
     parser.addPositionalArgument("num_samples", "Number of Samples");
+    parser.addPositionalArgument("height", "Rendered image height");
+    parser.addPositionalArgument("width", "Rendered image width");
 
     parser.process(a);
 
     const QStringList args = parser.positionalArguments();
-    if(args.size() != 3) {
+    if(args.size() != 5) {
         std::cerr << "Error: Wrong number of arguments" << std::endl;
         std::cerr << "Usage: Refer to README" << std::endl;
         a.exit(1);
@@ -35,8 +37,10 @@ int main(int argc, char *argv[])
     QString output = args[1];
     quint16 num_samples = 0;
     num_samples = args[2].toUShort(&ok, 10); // unsigned short int as number of samples will realistically never be large.
+    int height = args[3].toInt();
+    int width = args[4].toInt();
 
-    QImage image(IMAGE_WIDTH, IMAGE_HEIGHT, QImage::Format_RGB32);
+    QImage image(width, height, QImage::Format_RGB32);
 
     Scene *scene;
     if(!Scene::load(scenefile, &scene)) {
@@ -45,7 +49,7 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    PathTracer tracer(IMAGE_WIDTH, IMAGE_HEIGHT, num_samples);
+    PathTracer tracer(width, height, num_samples);
 
     QRgb *data = reinterpret_cast<QRgb *>(image.bits());
 

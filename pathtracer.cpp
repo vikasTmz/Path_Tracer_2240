@@ -116,9 +116,14 @@ void cosineSampleHemisphere(const Vector3f &normal, Vector3f &wi, float &pdf, un
     double r2 = erand48(Xi);
 
     float phi = 2.f * EIGEN_PI * r1;
-    float sr2 = qSqrt(r2);
+    float theta = qSqrt(r2);
+//    float theta = std::acos(std::sqrt(r2));
+//    float theta = qAcos(qSqrt(r2));
 
-    wi = tangentConvert(Vector3f(sr2 * qCos(phi), qSqrt(1.0f - r2), sr2 * qSin(phi)).normalized(), normal);
+//    Vector3f(std::sin(theta) * std::cos(phi), std::sin(theta) * std::sin(phi), std::cos(theta)),  std::cos(theta)/EIGEN_PI
+//    wi = tangentConvert(Vector3f(qSin(theta) * qCos(phi), qSqrt(1.0f - r2), qCos(theta) * qSin(phi)).normalized(), normal);
+//    pdf = cos(theta) / EIGEN_PI;
+    wi = tangentConvert(Vector3f(theta * qCos(phi), qSqrt(1.0f - r2), theta * qSin(phi)).normalized(), normal);
     pdf = normal.dot(wi) / EIGEN_PI;
 }
 
@@ -156,9 +161,9 @@ Vector3f directLighting(const Vector3f& hit, const Vector3f& normal, const Scene
     return intensity;
 }
 
-Vector3f vectmod(Vector3f a, Vector3f b) {
-    return Vector3f(a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]);
-}
+//Vector3f vectmod(Vector3f a, Vector3f b) {
+//    return Vector3f(a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]);
+//}
 
 Vector3f PathTracer::traceRay(const Ray& r, const Scene& scene, uint depth, unsigned short *Xi)
 {
