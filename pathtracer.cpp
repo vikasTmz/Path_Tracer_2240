@@ -14,6 +14,8 @@ using namespace Eigen;
 PathTracer::PathTracer(int width, int height, quint16 num_samples)
     : m_width(width), m_height(height), m_num_samples(num_samples)
 {
+    m_mindepth = 5;
+    m_maxdepth = 10;
 }
 
 template <typename T>
@@ -84,7 +86,7 @@ Vector3f PathTracer::tracePixel(int x, int y, const Scene& scene, const Matrix4f
 //        //             cx  =     w      ,       cy =             , cam.d.z = -1
 //        Vector3f d((2.f * xcom / m_width) - 1, 1 - (2.f * ycom / m_height), -1); // Vec d
 //        d.normalize();
-        Vector3f d((2.f * x / m_width) - 1, 1 - (2.f * y / m_height), -1); // Vec d
+        Vector3f d((2.f * (x + 0.5 - erand48(Xi)) / m_width) - 1, 1 - (2.f * (y + 0.5 - erand48(Xi)) / m_height), -1); // Vec d
         d.normalize();
 
         Ray r(p, d); // Ray(cam.o+d*140, d.norm())
@@ -164,7 +166,7 @@ Vector3f PathTracer::traceRay(const Ray& r, const Scene& scene, uint depth, unsi
 
     IntersectionInfo i;
     Ray ray(r);                             // maxdepth
-    if(scene.getIntersection(ray, &i) && depth < 10) {
+    if(scene.getIntersection(ray, &i) && depth < m_maxdepth) {
 
           //** Example code for accessing materials provided by a .mtl file **
         const Mesh *m = static_cast<const Mesh *>(i.object);
@@ -189,7 +191,7 @@ Vector3f PathTracer::traceRay(const Ray& r, const Scene& scene, uint depth, unsi
         // Diffuse
         if (mat.illum == 2)
         {                           // mindepth
-            const float pdf_rr = depth < 1 ? 1.0f : qMin(qMax(diffuse[0], qMax(diffuse[1], diffuse[2])), 0.99f);
+            const float pdf_rr = depth < m_mindepth ? 1.0f : qMin(qMax(diffuse[0], qMax(diffuse[1], diffuse[2])), 0.99f);
             Vector3f albedo = Vector3f(diffuse[0],diffuse[1],diffuse[3]) / EIGEN_PI;
             if (erand48(Xi) < pdf_rr)
             {
@@ -210,7 +212,7 @@ Vector3f PathTracer::traceRay(const Ray& r, const Scene& scene, uint depth, unsi
         else if (mat.illum == 5)
         {
             Vector3f albedo = Vector3f(1.0f, 1.0f, 1.0f);
-            const float pdf_rr = depth < 1 ? 1.0f : qMin(qMax(specular[0], qMax(specular[1], specular[2])), 0.99f);
+            const float pdf_rr = depth < m_mindepth ? 1.0f : qMin(qMax(specular[0], qMax(specular[1], specular[2])), 0.99f);
             if (erand48(Xi) < pdf_rr)
             {
               Vector3f refl = (ray.d - 2.f * normal * normal.dot(ray.d)).normalized();
@@ -224,7 +226,7 @@ Vector3f PathTracer::traceRay(const Ray& r, const Scene& scene, uint depth, unsi
         else if (mat.illum == 7)
         {
             Vector3f albedo = Vector3f(1.0f, 1.0f, 1.0f);
-            const float pdf_rr = depth < 1 ? 1.f : 0.95f;
+            const float pdf_rr = depth < m_mindepth ? 1.f : 0.95f;
             if (erand48(Xi) < pdf_rr) {
                 const Vector3f refl = (ray.d - 2.f * normal * normal.dot(ray.d)).normalized();
                 const float ni = 1.f;

@@ -49,6 +49,9 @@ int main(int argc, char *argv[])
 
     QRgb *data = reinterpret_cast<QRgb *>(image.bits());
 
+    QTime myTimer;
+    myTimer.start();
+
     tracer.traceScene(data, *scene);
     delete scene;
 
@@ -58,6 +61,9 @@ int main(int argc, char *argv[])
     }
     if(success) {
         std::cout << "Wrote rendered image to " << output.toStdString() << std::endl;
+        float nMilliseconds = myTimer.elapsed();
+        std::cout << "Total time to render (seconds) = " << nMilliseconds / 1000.0f << std::endl;
+        std::cout << "Total time to render (minutes) = " << nMilliseconds / 60000.0f << std::endl;
     } else {
         std::cerr << "Error: failed to write image to " << output.toStdString() << std::endl;
     }

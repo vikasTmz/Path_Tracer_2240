@@ -3,6 +3,7 @@
 
 #include <QImage>
 #include <QtMath>
+#include <QTime>
 
 #include "scene/scene.h"
 #include "erand48.h"
@@ -17,7 +18,7 @@ public:
     static float random();
 
 private:
-    int m_width, m_height;
+    int m_width, m_height, m_mindepth, m_maxdepth;
     quint16 m_num_samples;
 
     void toneMap(QRgb *imageData, std::vector<Eigen::Vector3f> &intensityValues);
