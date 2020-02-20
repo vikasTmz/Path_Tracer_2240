@@ -13,6 +13,15 @@ To set these command line arguments in QT, go to the Projects tab on the left, u
 
 Additional command line arguments can be added in main.cpp. The stencil code uses QCommandLineParser to parse the command line arguments, so take a look at the documentation if you want to add more arguments.
 
+```
+ mkdir build && cd build
+ qmake -makefile ../final.pro
+ make release
+ ./release/path-stencil ../example..... 100 256 256
+./release/final -h (for more options)
+```
+
+
 #### About the code
 The main files you should need to edit/look at are pathtracer.cpp and the files in the scene/ directory, however feel free to modify any other code you like.
 
@@ -23,3 +32,13 @@ In the scene directory, there is the Mesh class, which represents the objects th
 #### Scene files
 The stencil code uses a modified version of the CS123 scene files, which are xml files. The full spec for the scene files can be found in scenefile.pdf, however the stencil code only supports primitives of type "mesh". It does not support cubes, cylinders, etc., however meshes can be used to get any of those shapes, and if you want, you can add support for primitives. 
 Some example scenes can be found in the example-scenes directory.
+
+#### Results
+
+### Final resutls
+Put results for each scene. Have a before and after. With and without direct lighting, without and with aliasing, with and without samplings, with and without anything else.
+
+### Failures (Bloopers)
+
+
+
