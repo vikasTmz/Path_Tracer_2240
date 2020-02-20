@@ -182,15 +182,102 @@ Vector3f directLighting(const Vector3f& hit, const Vector3f& normal, const Scene
             float ndotl = clamp(toLight.dot(normal), 0.f, 1.f);
 
             intensity += Vector3f(mat.emission[0], mat.emission[1], mat.emission[2]) * (light->getSurfaceArea() * ndotl * qAbs(toLight.dot((t->getNormal(j)).normalized() )) / distSquare);
+//            if (Vector3f(mat.emission)[0] == 0)
+//                std::cout<<"exiting with radiance of "<< Vector3f(mat.emission) <<std::endl;
+        }
+    }
+    return intensity;
+}
+
+Vector3f sampleDirectLightingCombined(const Vector3f& hit, const Vector3f& normal,Vector3f p, const Vector3f pn, const tinyobj::material_t& pmat, const Scene &scene){
+
+    Vector3f intensity(0, 0, 0);
+    std::vector<Triangle *> lights = scene.getEmissiveTriangles();
+
+    for(int i =0 ;i < lights.size(); ++i){
+
+        Vector3f lightSample = lights[i]->sample();
+
+        Vector4f lightSample4d = Vector4f(lightSample[0], lightSample[1], lightSample[2], 1);
+        Vector4f lightTransformVec =  lights[i]->transform.matrix() * lightSample4d;
+
+//        Vector3f lightPoint = Vector3f(light->transform() * Vector4f(light->sample(), 1));
+        Vector3f lightPoint = Vector3f(lightTransformVec[0],lightTransformVec[1],lightTransformVec[2]);
+
+        Vector3f toLight = (lightPoint - hit);
+        float distSquare = qPow(toLight[0],2) + qPow(toLight[1],2) + qPow(toLight[2],2);
+        toLight.normalize();
+
+        IntersectionInfo li;
+        Ray newray(hit + toLight*FLOAT_EPSILON, toLight);
+
+        if(scene.getIntersection(newray, &li)) {
+            //check if shadowed
+            const Triangle *t = static_cast<const Triangle *>(li.data);
+            if(t->getIndex() == lights[i]->getIndex()){
+
+                Vector3f e = Vector3f(lights[i]->getMaterial().emission[0], lights[i]->getMaterial().emission[1], lights[i]->getMaterial().emission[2]);
+
+
+                if (toLight.dot(t->getNormal(li)) > 0.0f ) continue;
+                float ndotl = clamp(toLight.dot(normal), 0.f, 1.f);
+
+                intensity += e * (lights[i]->getSurfaceArea() * ndotl * qAbs(toLight.dot((t->getNormal(li)).normalized() )) / distSquare);
+                if (e[0] == 0)
+                    std::cout << "Zero emission detected" << std::endl;
+            }
+
         }
     }
 
     return intensity;
+
 }
 
-//Vector3f vectmod(Vector3f a, Vector3f b) {
-//    return Vector3f(a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]);
-//}
+Vector3f sampleDirectLighting(Vector3f p, const Vector3f pn, const tinyobj::material_t& pmat, int pmat_type, Ray p_rin, const Scene &scene){
+
+    Vector3f dL = Vector3f::Zero();
+    const tinyobj::real_t *d = pmat.diffuse; //Diffuse color as array of floats
+    Vector3f pd = Vector3f(d[0], d[1], d[2]);
+    std::vector<Triangle *> lights = scene.getEmissiveTriangles();
+
+    for(int i =0 ;i < lights.size(); ++i){
+
+        Vector3f pl = lights[i]->getRandomPointWithin();
+        Vector3f rd = (pl - p).normalized();
+        Ray ray2light(p, rd); //the ray from hit point to a sampled point in the light source
+
+        IntersectionInfo li;
+        if(scene.getIntersection(ray2light, &li)) {
+            //check if shadowed
+            const Triangle *t = static_cast<const Triangle *>(li.data);
+            if(t->getIndex() == lights[i]->getIndex()){
+
+                //get the parameters needed from this emissive triangle
+                Vector3f e = Vector3f(lights[i]->getMaterial().emission[0], lights[i]->getMaterial().emission[1], lights[i]->getMaterial().emission[2]);
+
+                const Vector3f ln = lights[i]->getNormal(li); //emissive triangle normal
+                const Affine3f l_invNT = lights[i]->inverseTransform;// getInverseNormalTransform(); //emissive triangle invNormalTransform matrix
+                const Vector3f world_ln = l_invNT * ln;
+
+                float cos_p = std::min(1.f, std::max(0.f, pn.normalized().dot(ray2light.d.normalized()))); //cosine term at p
+                float cos_l = std::min(1.f, std::max(0.f, world_ln.normalized().dot(-ray2light.d.normalized()))); //cosine term at the light
+                float dist2 = std::pow((pl - p).norm(), 2); //Question: Is this what is meant in the equation;
+                float t_area = lights[i]->findArea() ; //->getArea();
+//                std::cout << t_area << std::endl;
+                float c = ( cos_p * cos_l )/ dist2;
+
+                dL += (e.array() * pd.array()).matrix() * c * t_area; //* M_PI; //essentially divided by pdf = 1/area
+
+            }
+
+        }
+    }
+
+//    dL = dL / lights.size();
+    return dL;
+
+}
 
 Vector3f PathTracer::traceRay(const Ray& r, const Scene& scene, uint depth, unsigned short *Xi, bool show_lights)
 {
@@ -249,11 +336,25 @@ Vector3f PathTracer::traceRay(const Ray& r, const Scene& scene, uint depth, unsi
                 float pdf;
                 cosineSampleHemisphere(normal, wi, pdf, Xi);
                 const float illum_scale = wi.dot(normal) / (pdf * pdf_rr);
+                Vector3f directlight = sampleDirectLightingCombined(i.hit, normal,i.hit, normal,mat,scene) * illum_scale;
+//                Vector3f directlight = sampleDirectLighting(i.hit, normal, mat, mat.illum, ray, scene)* illum_scale;
+//                 Vector3f directlight = directLighting(i.hit, normal, scene)* illum_scale;
+                Ray ray_o(i.hit + FLOAT_EPSILON * wi, wi);
+                Vector3f indirectlight = traceRay(ray_o, scene, depth + 1, Xi, false) * illum_scale;
 
-                Vector3f directlight =  directLighting(i.hit, normal, scene)* illum_scale;
-                Vector3f indirectlight = traceRay(Ray(i.hit + FLOAT_EPSILON * wi, wi), scene, depth + 1, Xi, false) * illum_scale;
-                L += (albedo.array() * directlight.array()).matrix();
-                L += (albedo.array() * indirectlight.array()).matrix();
+                Vector3f brdf = albedo;
+                if (Vector3f(specular) != Vector3f(0,0,0))
+                {
+                    Vector3f refl = (ray.d - 2.f * normal * normal.dot(ray.d)).normalized();
+                    if ( normal.dot(ray.d) >= 0.0f ) refl = ray.d;
+                    float c = (mat.shininess + 2) * qPow(refl.dot(ray_o.d), mat.shininess) / (2 * EIGEN_PI) ;
+                    brdf = Vector3f(specular) * c;
+                }
+
+                L += (brdf.array() * directlight.array()).matrix();
+                L += (brdf.array() * indirectlight.array()).matrix();
+
+
 
             }
         }

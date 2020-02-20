@@ -71,6 +71,10 @@ float Mesh::getSurfaceArea() const {
     return m_sa;
 }
 
+std::vector<Object *> Mesh::getTriangles() const
+{
+    return *_objects;
+}
 
 Vector3f Mesh::getNormal(const IntersectionInfo &I) const
 {

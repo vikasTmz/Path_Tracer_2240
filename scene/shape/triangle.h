@@ -25,7 +25,8 @@ public:
     virtual Eigen::Vector3f getCentroid() const;
 
     int getIndex() const;
-
+    float findArea() const;
+    Eigen::Vector3f getRandomPointWithin() const;
     tinyobj::material_t getMaterial() const;
     void setMaterial(const tinyobj::material_t &material);
 

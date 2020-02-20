@@ -34,7 +34,7 @@ public:
     virtual bool getIntersection(const Ray &ray, IntersectionInfo *intersection) const;
     virtual Eigen::Vector3f sample() const override;
     virtual float getSurfaceArea() const override;
-
+    std::vector<Object *> getTriangles() const;
     virtual Eigen::Vector3f getNormal(const IntersectionInfo &I) const;
 
     virtual BBox getBBox() const;

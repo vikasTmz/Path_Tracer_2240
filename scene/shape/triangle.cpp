@@ -105,6 +105,30 @@ Vector3f Triangle::getNormal(const Vector3f &p) const{
     return interpolated_normal;
 }
 
+
+float Triangle::findArea() const
+{
+    Vector3f v12 = _v2 - _v1;
+    Vector3f v13 = _v3 - _v1;
+
+    float l1 = v12.norm();
+    float l2 = v13.norm();
+    float theta = acos(v12.normalized().dot(v13.normalized()));
+    return (l1 * l2 * sin(theta))/ 2.f;
+
+}
+
+Vector3f Triangle::getRandomPointWithin() const
+{
+    float p1 = ((float) rand() / (RAND_MAX));
+    float p2 = ((float) rand() / ((RAND_MAX) / (1.f - p1)));
+
+//    std::cout<<"Sampling point within the triangle with p1="<<p1<<" and p2="<<p2<<std::endl;
+
+    return _v1 + p1 * (_v2 - _v1) + p2 * (_v3 - _v1);
+
+}
+
 BBox Triangle::getBBox() const
 {
     return _bbox;
