@@ -15,7 +15,7 @@ Additional command line arguments can be added in main.cpp. The stencil code use
 
 ```
  mkdir build && cd build
- qmake -makefile ../final.pro
+ qmake -makefile ../path-stencil.pro
  make release
  ./release/path-stencil ../example..... 100 256 256
 ./release/final -h (for more options)
