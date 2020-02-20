@@ -229,6 +229,14 @@ Mesh *Scene::loadMesh(std::string filePath, const Affine3f &transform, const std
             materialIds,
             materials);
     m->setTransform(transform);
+//    m->isLight = false;
+//    for(int matid : materialIds) {
+//        tinyobj::material_t mat = materials[matid];
+//        if (mat.emission[0] + mat.emission[1] + mat.emission[2] > 0.f) {
+//            m->isLight = true;
+//            break;
+//        }
+//    }
     return m;
 }
 

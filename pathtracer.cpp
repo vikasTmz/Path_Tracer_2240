@@ -47,11 +47,12 @@ void PathTracer::traceScene(QRgb *imageData, const Scene& scene)
         fprintf(stderr,"\rRendering (%d spp) %5.2f%%",m_num_samples*4,100.*y/(m_height-1));
         for(int x = 0; x < m_width; ++x)
         {
-            int offset = x + (y * m_width); // i=(h-y-1)*w+x
+            int offset = x + (y * m_width); // i=(h-y-1)*w+x  or   x + ((m_height - y - 1) * m_width);
 //            for(int sy = 0; sy < 2; sy++)
 //            {
 //                for(int sx = 0; sx < 2; sx++)
 //                {
+            //  No clamping is done here. Do I need to??
                     intensityValues[offset] = tracePixel(x, y, scene, invViewMat, 0, 0); // c[i] = c[i] + Vec(clamp(r.x),clamp(r.y),clamp(r.z))*.25;
 //                }
 //            }
@@ -86,6 +87,7 @@ Vector3f PathTracer::tracePixel(int x, int y, const Scene& scene, const Matrix4f
 //        //             cx  =     w      ,       cy =             , cam.d.z = -1
 //        Vector3f d((2.f * xcom / m_width) - 1, 1 - (2.f * ycom / m_height), -1); // Vec d
 //        d.normalize();
+        // Solve Aliasing problems
         Vector3f d((2.f * (x + 0.5 - erand48(Xi)) / m_width) - 1, 1 - (2.f * (y + 0.5 - erand48(Xi)) / m_height), -1); // Vec d
         d.normalize();
 
@@ -127,11 +129,36 @@ void cosineSampleHemisphere(const Vector3f &normal, Vector3f &wi, float &pdf, un
     pdf = normal.dot(wi) / EIGEN_PI;
 }
 
+void uniformSampleHemisphere(const Vector3f& normal, Vector3f &wi, float &pdf, unsigned short *Xi) {
+    double r1 = erand48(Xi);
+    double r2 = erand48(Xi);
+
+    float phi = 2.f * EIGEN_PI * r1;
+    float sintheta = qSqrt(1.f - r2 * r2);
+
+    wi = tangentConvert(Vector3f(sintheta * cos(phi), r2, sintheta * sin(phi)).normalized(), normal);
+    pdf = 1.f / (2.f * EIGEN_PI);
+}
+
+void cosineExpSampleHemisphere(const Vector3f& normal, Vector3f&wi, float &pdf, int n,unsigned short *Xi) {
+    double r1 = erand48(Xi);
+    double r2 = erand48(Xi);
+
+    float phi = 2.f * EIGEN_PI * r1;
+    float costheta = qPow(r2, 1.0f / (n + 1));
+    float sintheta = qSqrt(qMax(0.f, 1.f - costheta * costheta));
+
+    wi = tangentConvert(Vector3f(sintheta*cos(phi), costheta, sintheta*sin(phi)).normalized(), normal);
+    pdf = (n + 1) * qPow(costheta, n) / (2.f * EIGEN_PI);
+}
+
+
 // Possible bugs
 Vector3f directLighting(const Vector3f& hit, const Vector3f& normal, const Scene& scene) {
     Vector3f intensity(0, 0, 0);
-
+//    std::vector<CS123SceneLightData> m_lights =  scene.getLights();
     for (Object* light : *scene.lights) {
+        // need to evaluate this ....
         Vector3f lightSample = light->sample();
         Vector4f lightSample4d = Vector4f(lightSample[0], lightSample[1], lightSample[2], 1);
         Vector4f lightTransformVec = light->transform.matrix() * lightSample4d;
@@ -143,18 +170,18 @@ Vector3f directLighting(const Vector3f& hit, const Vector3f& normal, const Scene
         float distSquare = qPow(toLight[0],2) + qPow(toLight[1],2) + qPow(toLight[2],2);
         toLight.normalize();
 
-        IntersectionInfo i;
+        IntersectionInfo j;
         Ray newray(hit + toLight*FLOAT_EPSILON, toLight);
 
-        if (scene.getIntersection(newray, &i) && i.object == light) {
-            const Mesh * m = static_cast<const Mesh *>(i.object);
-            const Triangle *t = static_cast<const Triangle *>(i.data);
+        if (scene.getIntersection(newray, &j) && j.object == light) {
+            const Mesh * m = static_cast<const Mesh *>(j.object);
+            const Triangle *t = static_cast<const Triangle *>(j.data);
             const tinyobj::material_t& mat = m->getMaterial(t->getIndex());
 
-            if (toLight.dot(t->getNormal(i)) > 0.0f ) continue;
+            if (toLight.dot(t->getNormal(j)) > 0.0f ) continue;
             float ndotl = clamp(toLight.dot(normal), 0.f, 1.f);
 
-            intensity += Vector3f(mat.emission[0], mat.emission[1], mat.emission[2]) * (light->getSurfaceArea() * ndotl * qAbs(toLight.dot((t->getNormal(i)).normalized() )) / distSquare);
+            intensity += Vector3f(mat.emission[0], mat.emission[1], mat.emission[2]) * (light->getSurfaceArea() * ndotl * qAbs(toLight.dot((t->getNormal(j)).normalized() )) / distSquare);
         }
     }
 
@@ -165,7 +192,7 @@ Vector3f directLighting(const Vector3f& hit, const Vector3f& normal, const Scene
 //    return Vector3f(a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]);
 //}
 
-Vector3f PathTracer::traceRay(const Ray& r, const Scene& scene, uint depth, unsigned short *Xi)
+Vector3f PathTracer::traceRay(const Ray& r, const Scene& scene, uint depth, unsigned short *Xi, bool show_lights)
 {
     Vector3f L = Vector3f(0,0,0); // radiance
 
@@ -186,12 +213,30 @@ Vector3f PathTracer::traceRay(const Ray& r, const Scene& scene, uint depth, unsi
 //                  NEW  --- START
 /////////////////////////////////////////////////////////////////////////////////////
 
-        if (!depth)
-            L +=Vector3f(emission);
+          // OLD - depth update
+//        if (!depth)
+//            L +=Vector3f(emission);
 
-        Vector3f normal = t->getNormal(i);
+
+        // NEW - NORMAL
+        Vector3f normal_uncorr = t->getNormal(i);
+        Vector4f normal_uncorr4d = Vector4f(normal_uncorr[0],normal_uncorr[1],normal_uncorr[2],0);
+        Vector4f normal4d = m->inverseNormalTransform.matrix() * normal_uncorr4d;
+        Vector3f normal = Vector3f(normal4d[0],normal4d[1],normal4d[2]);
+//        const glm::vec3 normal = glm::normalize((m->inverseNormalTransform * glm::vec4(t->getNormal(i), 0)).xyz());
+
+        // OLD - NORMAL
+//        Vector3f normal = t->getNormal(i);
+
+
         normal.normalize(); // surface normal   ,  n
-        Vector3f surf_normal = normal.dot(ray.d) < 0 ? normal : -normal ; // surface normal fixed for orientation , nl
+        const bool inward = normal.dot(ray.d) < 0;
+        Vector3f surf_normal = inward ? normal : -normal ; // surface normal fixed for orientation , nl
+
+        // fixed caustics
+        if (m->isLight && show_lights) {
+             L +=Vector3f(emission);
+        }
 
         // Diffuse
         if (mat.illum == 2)
@@ -206,7 +251,7 @@ Vector3f PathTracer::traceRay(const Ray& r, const Scene& scene, uint depth, unsi
                 const float illum_scale = wi.dot(normal) / (pdf * pdf_rr);
 
                 Vector3f directlight =  directLighting(i.hit, normal, scene)* illum_scale;
-                Vector3f indirectlight = traceRay(Ray(i.hit + FLOAT_EPSILON * wi, wi), scene, depth + 1, Xi) * illum_scale;
+                Vector3f indirectlight = traceRay(Ray(i.hit + FLOAT_EPSILON * wi, wi), scene, depth + 1, Xi, false) * illum_scale;
                 L += (albedo.array() * directlight.array()).matrix();
                 L += (albedo.array() * indirectlight.array()).matrix();
 
@@ -222,7 +267,7 @@ Vector3f PathTracer::traceRay(const Ray& r, const Scene& scene, uint depth, unsi
             {
               Vector3f refl = (ray.d - 2.f * normal * normal.dot(ray.d)).normalized();
               if ( normal.dot(ray.d) >= 0.0f ) refl = ray.d;
-              Vector3f indirectlight = traceRay(Ray(i.hit + FLOAT_EPSILON * refl, refl), scene, depth + 1, Xi) / pdf_rr;
+              Vector3f indirectlight = traceRay(Ray(i.hit + FLOAT_EPSILON * refl, refl), scene, depth + 1, Xi, true) / pdf_rr;
               L += (albedo.array() * indirectlight.array()).matrix();
             }
         }
@@ -244,7 +289,7 @@ Vector3f PathTracer::traceRay(const Ray& r, const Scene& scene, uint depth, unsi
                 // TODO m_full
                 Vector3f indirectlight(0,0,0);
                 if (radicand < FLOAT_EPSILON) {
-                  indirectlight = traceRay(Ray(i.hit + FLOAT_EPSILON * refl, refl), scene, depth + 1, Xi) / pdf_rr;
+                  indirectlight = traceRay(Ray(i.hit + FLOAT_EPSILON * refl, refl), scene, depth + 1, Xi, true) / pdf_rr;
                 } else {
                     Vector3f refr;
                     if (normal.dot(ray.d) < 0) {
@@ -255,9 +300,9 @@ Vector3f PathTracer::traceRay(const Ray& r, const Scene& scene, uint depth, unsi
                     const float R0 = (nt - ni) * (nt - ni) / ((nt + ni) * (nt + ni));
                     const float Rtheta = R0 + (1.f - R0) * qPow(1.f - (normal.dot(ray.d) < 0 ? -costheta : refr.dot(normal)), 5);
                     if (erand48(Xi) < Rtheta) {
-                      indirectlight = traceRay(Ray(i.hit + FLOAT_EPSILON * refl, refl), scene, depth + 1, Xi) / pdf_rr;
+                      indirectlight = traceRay(Ray(i.hit + FLOAT_EPSILON * refl, refl), scene, depth + 1, Xi, true) / pdf_rr;
                     } else {
-                      indirectlight = traceRay(Ray(i.hit + FLOAT_EPSILON * refr, refr), scene, depth + 1, Xi) / pdf_rr;
+                      indirectlight = traceRay(Ray(i.hit + FLOAT_EPSILON * refr, refr), scene, depth + 1, Xi, true) / pdf_rr;
                     }
                 }
                  L += (albedo.array() * indirectlight.array()).matrix();
@@ -283,14 +328,15 @@ int clampIntensity(float v){
 }
 
 void PathTracer::toneMap(QRgb *imageData, std::vector<Vector3f> &intensityValues) {
+
     for(int y = 0; y < m_height; ++y) {
         for(int x = 0; x < m_width; ++x) {
             int offset = x + (y * m_width);
-//            std::cout << clampIntensity(intensityValues[offset](0)) << std::endl;
+
             imageData[offset] = qRgb(clampIntensity(intensityValues[offset](0)),
                                      clampIntensity(intensityValues[offset](1)),
                                      clampIntensity(intensityValues[offset](2)));
-//            imageData[offset] = intensityValues[offset].norm() > 0 ? qRgb(255, 255, 255) : qRgb(40, 40, 40);
+
         }
     }
 
