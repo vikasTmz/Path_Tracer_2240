@@ -217,7 +217,7 @@ Vector3f sampleDirectLightingCombined(const Vector3f& hit, const Vector3f& norma
             if(t->getIndex() == lights[i]->getIndex()){
 
                 Vector3f e = Vector3f(lights[i]->getMaterial().emission[0], lights[i]->getMaterial().emission[1], lights[i]->getMaterial().emission[2]);
-
+                e = e *6.0f;
 
                 if (toLight.dot(t->getNormal(li)) > 0.0f ) continue;
                 float ndotl = clamp(toLight.dot(normal), 0.f, 1.f);
@@ -389,20 +389,29 @@ Vector3f PathTracer::traceRay(const Ray& r, const Scene& scene, uint depth, unsi
 
                 // TODO m_full
                 Vector3f indirectlight(0,0,0);
-                if (radicand < FLOAT_EPSILON) {
+                if (radicand < FLOAT_EPSILON)
+                {
                   indirectlight = traceRay(Ray(i.hit + FLOAT_EPSILON * refl, refl), scene, depth + 1, Xi, true) / pdf_rr;
-                } else {
+                }
+                else
+                {
                     Vector3f refr;
-                    if (normal.dot(ray.d) < 0) {
+                    if (normal.dot(ray.d) < 0)
+                    {
                         refr = ray.d * ratio - normal * (costheta * ratio + qSqrt(radicand));
-                    } else {
+                    }
+                    else
+                    {
                         refr = ray.d * ratio + normal * (costheta * ratio + qSqrt(radicand));
                     }
                     const float R0 = (nt - ni) * (nt - ni) / ((nt + ni) * (nt + ni));
                     const float Rtheta = R0 + (1.f - R0) * qPow(1.f - (normal.dot(ray.d) < 0 ? -costheta : refr.dot(normal)), 5);
-                    if (erand48(Xi) < Rtheta) {
+                    if (erand48(Xi) < Rtheta)
+                    {
                       indirectlight = traceRay(Ray(i.hit + FLOAT_EPSILON * refl, refl), scene, depth + 1, Xi, true) / pdf_rr;
-                    } else {
+                    }
+                    else
+                    {
                       indirectlight = traceRay(Ray(i.hit + FLOAT_EPSILON * refr, refr), scene, depth + 1, Xi, true) / pdf_rr;
                     }
                 }
