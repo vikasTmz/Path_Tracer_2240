@@ -53,7 +53,8 @@ float PathTracer::random()
 
 void depthOfField(Vector3f &orientation, Vector3f &direction, Vector3f &p, Vector3f &d, float focal, float aperture, unsigned short *ER48SEED)
 {
-    orientation = p + aperture * Vector3f(erand48(ER48SEED)-0.5f, erand48(ER48SEED)-0.5f, erand48(ER48SEED)-0.5f);
+    Vector3f erand3f( 0.5 - erand48(ER48SEED), 0.5 - erand48(ER48SEED), 0.5 - erand48(ER48SEED));
+    orientation = p + aperture * erand3f;
     direction = (p + focal * d - orientation);
     direction.normalize();
 }
@@ -115,7 +116,7 @@ Vector3f PathTracer::tracePixel(int x, int y, const Scene& scene, const Matrix4f
         // DEPTH OF FIELD
         Vector3f orientation;
         Vector3f direction;
-        depthOfField(orientation, direction, p, d, 3.0,0.4,ER48SEED);
+        depthOfField(orientation, direction, p, d, 4.0,0.5,ER48SEED);
         r.o = orientation;
         r.d = direction;
         //r.d = d;
@@ -169,7 +170,7 @@ Vector3f directLighting(const Scene &scene, const Vector3f& normal, const Vector
 
     Vector3f out(0, 0, 0);
     std::vector<Triangle *> emissiveSurf = scene.getLightSources();
-    std::cout << emissiveSurf.size() << std::endl;
+//    std::cout << emissiveSurf.size() << std::endl;
     for(int i =0 ;i < emissiveSurf.size(); ++i)
     {
         Vector3f hit_to_light = (vectorTransform(emissiveSurf[i]->transform, emissiveSurf[i]->sample(), 1.0f) - hit);
