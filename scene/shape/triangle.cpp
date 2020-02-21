@@ -6,13 +6,6 @@
 using namespace Eigen;
 using namespace std;
 
-//default_random_engine rnd(1);
-//uniform_real_distribution<float> dis(0, 1);
-
-//float random() {
-//    return dis(rnd);
-//}
-
 Triangle::Triangle()
 {
 }
@@ -26,7 +19,7 @@ Triangle::Triangle(Vector3f v1, Vector3f v2, Vector3f v3, Vector3f n1, Vector3f 
     _bbox.expandToInclude(_v3);
 
     Vector3f temp = (v1 - v3).cross(v2 - v3);
-    m_sa = qSqrt(qPow(temp[0],2) + qPow(temp[1],2) + qPow(temp[2],2));
+    m_area = qSqrt(qPow(temp[0],2) + qPow(temp[1],2) + qPow(temp[2],2));
 }
 
 bool Triangle::getIntersection(const Ray &ray, IntersectionInfo *intersection) const
@@ -64,15 +57,12 @@ bool Triangle::getIntersection(const Ray &ray, IntersectionInfo *intersection) c
     }
 }
 
-Vector3f Triangle::sample() const {
-    float sr1 = qSqrt(PathTracer::random());
-    float r2 = PathTracer::random();
+Vector3f Triangle::sample() const
+{
+    float a = qSqrt(PathTracer::random());
+    float b = PathTracer::random();
 
-    return (1.f - sr1)*_v1 + sr1*(1.f - r2)*_v2 + sr1*r2*_v3;
-}
-
-float Triangle::getSurfaceArea() const {
-    return m_sa;
+    return _v1 * (1.0f - a) + _v2 * (1.f - b) * a + _v3 * b * a;
 }
 
 Vector3f Triangle::getNormal(const IntersectionInfo &I) const
@@ -80,6 +70,11 @@ Vector3f Triangle::getNormal(const IntersectionInfo &I) const
     //Calculate Barycentric coordinates to get interpolated normal
     Vector3f p = I.hit;
     return getNormal(p);
+}
+
+float Triangle::getArea() const
+{
+    return m_area;
 }
 
 Vector3f Triangle::getNormal(const Vector3f &p) const{
@@ -105,29 +100,6 @@ Vector3f Triangle::getNormal(const Vector3f &p) const{
     return interpolated_normal;
 }
 
-
-float Triangle::findArea() const
-{
-    Vector3f v12 = _v2 - _v1;
-    Vector3f v13 = _v3 - _v1;
-
-    float l1 = v12.norm();
-    float l2 = v13.norm();
-    float theta = acos(v12.normalized().dot(v13.normalized()));
-    return (l1 * l2 * sin(theta))/ 2.f;
-
-}
-
-Vector3f Triangle::getRandomPointWithin() const
-{
-    float p1 = ((float) rand() / (RAND_MAX));
-    float p2 = ((float) rand() / ((RAND_MAX) / (1.f - p1)));
-
-//    std::cout<<"Sampling point within the triangle with p1="<<p1<<" and p2="<<p2<<std::endl;
-
-    return _v1 + p1 * (_v2 - _v1) + p2 * (_v3 - _v1);
-
-}
 
 BBox Triangle::getBBox() const
 {

@@ -7,8 +7,6 @@
 
 #include <util/CS123Common.h>
 
-double GAMMA_CORR = 0.454545455;
-
 using namespace Eigen;
 
 PathTracer::PathTracer(int width, int height, quint16 num_samples)
@@ -18,83 +16,114 @@ PathTracer::PathTracer(int width, int height, quint16 num_samples)
     m_maxdepth = 10;
 }
 
+//////////////////////////////////////////////////
+//                 Helpers
+//////////////////////////////////////////////////
+
+std::default_random_engine rseed(1);
+std::uniform_real_distribution<float> distribution(0, 1);
+
 template <typename T>
 T clamp(const T& v, const T& lower, const T& upper) {
     assert( !(upper < lower) );
     return (v < lower) ? lower : (upper < v) ? upper : v;
 }
 
-std::default_random_engine rnd(1);
-std::uniform_real_distribution<float> dis(0, 1);
-
-float PathTracer::random() {
-    return dis(rnd);
+Vector3f vectorTransform(const Affine3f &a, const Vector3f &b, float c)
+{
+    Vector4f b4d = Vector4f(b[0],b[1],b[2],c);
+    Vector4f ab = a.matrix() * b4d;
+    return Vector3f(ab[0],ab[1],ab[2]);
 }
 
-//double erand48(unsigned short xsubi[3]) {
-//    return (double)rand() / (double)RAND_MAX;
-//}
+float PathTracer::brdfLimit(const tinyobj::real_t *material, float thresh)
+{
+    return qMin(qMax(material[0], qMax(material[1], material[2])), thresh);
+}
+
+const float PathTracer::russianRouletteBRDF(uint depth, float low)
+{
+    return depth < m_mindepth ? 1.0f : low;
+}
+
+float PathTracer::random()
+{
+    return distribution(rseed);
+}
+
+void depthOfField(Vector3f &orientation, Vector3f &direction, Vector3f &p, Vector3f &d, float focal, float aperture, unsigned short *ER48SEED)
+{
+    orientation = p + aperture * Vector3f(erand48(ER48SEED)-0.5f, erand48(ER48SEED)-0.5f, erand48(ER48SEED)-0.5f);
+    direction = (p + focal * d - orientation);
+    direction.normalize();
+}
+
+//////////////////////////////////////////////////
+
+
 
 void PathTracer::traceScene(QRgb *imageData, const Scene& scene)
 {
     std::vector<Vector3f> intensityValues(m_width * m_height);
     Matrix4f invViewMat = (scene.getCamera().getScaleMatrix() * scene.getCamera().getViewMatrix()).inverse();
 
-//    #pragma omp parallel for collapse(2)
     #pragma omp parallel for schedule(dynamic, 1)
     for(int y = 0; y < m_height; ++y)
     {
-        fprintf(stderr,"\rRendering (%d spp) %5.2f%%",m_num_samples*4,100.*y/(m_height-1));
+        fprintf(stderr,"\rRendering (%d Samples Per Pixel) %5.2f%%",m_num_samples,100.*y/(m_height-1)); // Taken from smallpt
         for(int x = 0; x < m_width; ++x)
         {
-            int offset = x + (y * m_width); // i=(h-y-1)*w+x  or   x + ((m_height - y - 1) * m_width);
-//            for(int sy = 0; sy < 2; sy++)
-//            {
-//                for(int sx = 0; sx < 2; sx++)
-//                {
-            //  No clamping is done here. Do I need to??
-                    intensityValues[offset] = tracePixel(x, y, scene, invViewMat, 0, 0); // c[i] = c[i] + Vec(clamp(r.x),clamp(r.y),clamp(r.z))*.25;
-//                }
-//            }
+            int offset = x + (y * m_width);
+
+//            if (x > 370 && y > 370)
+                intensityValues[offset] = tracePixel(x, y, scene, invViewMat);
+//            else
+//                intensityValues[offset] = Vector3f(0,0,0);
         }
     }
 
     toneMap(imageData, intensityValues);
 }
 
-Vector3f PathTracer::tracePixel(int x, int y, const Scene& scene, const Matrix4f &invViewMatrix, int sx, int sy)
+Vector3f PathTracer::tracePixel(int x, int y, const Scene& scene, const Matrix4f &invViewMatrix)
 {
     Vector3f out(0, 0, 0);
-    Vector3f p(0, 0, 0); //cam.o (camera position)
+    Vector3f p(0, 0, 0);
     uint depth = 0;
-    unsigned short Xi[3]={0,0,y*y*y};
-//    float xcom, ycom;
-//    double r1, r2, dx, dy;
+    unsigned short ER48SEED[3]={0,0,y*y*y};
+    float antialiasX, antialiasY;
 
     for(int s = 0; s < m_num_samples; s++)
     {
 
-//        r1 = 2 * erand48(Xi);
-//        dx=r1<1 ? qSqrt(r1)-1: 1-qSqrt(2-r1);
-//        r2=2*erand48(Xi);
-//        dy=r2<1 ? qSqrt(r2)-1: 1-qSqrt(2-r2);
-
-//        // Vec d = cx * ( ( (sx+.5 + dx)/2 + x)/w - .5) + cy * ( ( (sy+.5 + dy)/2 + y)/h - .5) + cam.d;
-//        // (w/h) * (  ( x + (sx+.5 + dx)/2 ) / m_width - .5  )
-//        xcom = x + 0.5 * sx + 0.25 + 0.5 * dx;
-//        ycom = y + 0.5 * sy + 0.25 + 0.5 * dy;
-
-//        //             cx  =     w      ,       cy =             , cam.d.z = -1
-//        Vector3f d((2.f * xcom / m_width) - 1, 1 - (2.f * ycom / m_height), -1); // Vec d
-//        d.normalize();
+        antialiasX = x + 0.5 - erand48(ER48SEED);
+        antialiasY = y + 0.5 - erand48(ER48SEED);
         // Solve Aliasing problems
-        Vector3f d((2.f * (x + 0.5 - erand48(Xi)) / m_width) - 1, 1 - (2.f * (y + 0.5 - erand48(Xi)) / m_height), -1); // Vec d
+        Vector3f d((2.0f * antialiasX / m_width) - 1, 1 - (2.0f * antialiasY / m_height), -1);
         d.normalize();
 
-        Ray r(p, d); // Ray(cam.o+d*140, d.norm())
+        Ray r(p, d);
         r = r.transform(invViewMatrix);
 
-        out += traceRay(r, scene, depth, Xi); // r = r + radiance( Ray(cam.o+d*140, d.norm()) ,0,Xi);
+
+//            float m_focal_len = 3.2;
+//            float m_aperture = 0.3;
+//            Vector3f jitter_p = p + m_aperture * Vector3f(erand48(ER48SEED)-0.5f, erand48(ER48SEED)-0.5f, erand48(ER48SEED)-0.5f);
+//            Vector3f focal_p = p + m_focal_len * d;
+//            Vector3f jitter_d = (focal_p - jitter_p).normalized();
+
+        // DEPTH OF FIELD
+        Vector3f orientation;
+        Vector3f direction;
+        depthOfField(orientation, direction, p, d, 3.0,0.4,ER48SEED);
+        r.o = orientation;
+        r.d = direction;
+        //r.d = d;
+        r = r.transform(invViewMatrix);
+
+
+
+        out += traceRay(r, scene, depth, ER48SEED);
     }
 
     out = out * (1./m_num_samples);
@@ -112,26 +141,21 @@ Vector3f tangentConvert(const Vector3f& pointdir, const Vector3f& normal) {
                     pointdir[0] * bitangent[2] + pointdir[1] * normal[2] + pointdir[2] * tangent[2]).normalized();
 }
 
-void cosineSampleHemisphere(const Vector3f &normal, Vector3f &wi, float &pdf, unsigned short *Xi)
+void sampleHemisphereImportance(Vector3f &wi, float &pdf, const Vector3f &normal, const tinyobj::material_t& mat, unsigned short *ER48SEED)
 {
-    double r1 = erand48(Xi);
-    double r2 = erand48(Xi);
+    double r1 = erand48(ER48SEED);
+    double r2 = erand48(ER48SEED);
 
     float phi = 2.f * EIGEN_PI * r1;
     float theta = qSqrt(r2);
-//    float theta = std::acos(std::sqrt(r2));
-//    float theta = qAcos(qSqrt(r2));
 
-//    Vector3f(std::sin(theta) * std::cos(phi), std::sin(theta) * std::sin(phi), std::cos(theta)),  std::cos(theta)/EIGEN_PI
-//    wi = tangentConvert(Vector3f(qSin(theta) * qCos(phi), qSqrt(1.0f - r2), qCos(theta) * qSin(phi)).normalized(), normal);
-//    pdf = cos(theta) / EIGEN_PI;
     wi = tangentConvert(Vector3f(theta * qCos(phi), qSqrt(1.0f - r2), theta * qSin(phi)).normalized(), normal);
     pdf = normal.dot(wi) / EIGEN_PI;
 }
 
-void uniformSampleHemisphere(const Vector3f& normal, Vector3f &wi, float &pdf, unsigned short *Xi) {
-    double r1 = erand48(Xi);
-    double r2 = erand48(Xi);
+void sampleHemisphereUniform(Vector3f &wi, float &pdf, const Vector3f& normal, unsigned short *ER48SEED) {
+    double r1 = erand48(ER48SEED);
+    double r2 = erand48(ER48SEED);
 
     float phi = 2.f * EIGEN_PI * r1;
     float sintheta = qSqrt(1.f - r2 * r2);
@@ -140,288 +164,188 @@ void uniformSampleHemisphere(const Vector3f& normal, Vector3f &wi, float &pdf, u
     pdf = 1.f / (2.f * EIGEN_PI);
 }
 
-void cosineExpSampleHemisphere(const Vector3f& normal, Vector3f&wi, float &pdf, int n,unsigned short *Xi) {
-    double r1 = erand48(Xi);
-    double r2 = erand48(Xi);
+Vector3f directLighting(const Scene &scene, const Vector3f& normal, const Vector3f& hit)
+{
 
-    float phi = 2.f * EIGEN_PI * r1;
-    float costheta = qPow(r2, 1.0f / (n + 1));
-    float sintheta = qSqrt(qMax(0.f, 1.f - costheta * costheta));
-
-    wi = tangentConvert(Vector3f(sintheta*cos(phi), costheta, sintheta*sin(phi)).normalized(), normal);
-    pdf = (n + 1) * qPow(costheta, n) / (2.f * EIGEN_PI);
-}
-
-
-// Possible bugs
-Vector3f directLighting(const Vector3f& hit, const Vector3f& normal, const Scene& scene) {
-    Vector3f intensity(0, 0, 0);
-//    std::vector<CS123SceneLightData> m_lights =  scene.getLights();
-    for (Object* light : *scene.lights) {
-        // need to evaluate this ....
-        Vector3f lightSample = light->sample();
-        Vector4f lightSample4d = Vector4f(lightSample[0], lightSample[1], lightSample[2], 1);
-        Vector4f lightTransformVec = light->transform.matrix() * lightSample4d;
-
-//        Vector3f lightPoint = Vector3f(light->transform() * Vector4f(light->sample(), 1));
-        Vector3f lightPoint = Vector3f(lightTransformVec[0],lightTransformVec[1],lightTransformVec[2]);
-
-        Vector3f toLight = (lightPoint - hit);
-        float distSquare = qPow(toLight[0],2) + qPow(toLight[1],2) + qPow(toLight[2],2);
-        toLight.normalize();
-
-        IntersectionInfo j;
-        Ray newray(hit + toLight*FLOAT_EPSILON, toLight);
-
-        if (scene.getIntersection(newray, &j) && j.object == light) {
-            const Mesh * m = static_cast<const Mesh *>(j.object);
-            const Triangle *t = static_cast<const Triangle *>(j.data);
-            const tinyobj::material_t& mat = m->getMaterial(t->getIndex());
-
-            if (toLight.dot(t->getNormal(j)) > 0.0f ) continue;
-            float ndotl = clamp(toLight.dot(normal), 0.f, 1.f);
-
-            intensity += Vector3f(mat.emission[0], mat.emission[1], mat.emission[2]) * (light->getSurfaceArea() * ndotl * qAbs(toLight.dot((t->getNormal(j)).normalized() )) / distSquare);
-//            if (Vector3f(mat.emission)[0] == 0)
-//                std::cout<<"exiting with radiance of "<< Vector3f(mat.emission) <<std::endl;
-        }
-    }
-    return intensity;
-}
-
-Vector3f sampleDirectLightingCombined(const Vector3f& hit, const Vector3f& normal,Vector3f p, const Vector3f pn, const tinyobj::material_t& pmat, const Scene &scene){
-
-    Vector3f intensity(0, 0, 0);
-    std::vector<Triangle *> lights = scene.getEmissiveTriangles();
-
-    for(int i =0 ;i < lights.size(); ++i){
-
-        Vector3f lightSample = lights[i]->sample();
-
-        Vector4f lightSample4d = Vector4f(lightSample[0], lightSample[1], lightSample[2], 1);
-        Vector4f lightTransformVec =  lights[i]->transform.matrix() * lightSample4d;
-
-//        Vector3f lightPoint = Vector3f(light->transform() * Vector4f(light->sample(), 1));
-        Vector3f lightPoint = Vector3f(lightTransformVec[0],lightTransformVec[1],lightTransformVec[2]);
-
-        Vector3f toLight = (lightPoint - hit);
-        float distSquare = qPow(toLight[0],2) + qPow(toLight[1],2) + qPow(toLight[2],2);
-        toLight.normalize();
+    Vector3f out(0, 0, 0);
+    std::vector<Triangle *> emissiveSurf = scene.getLightSources();
+    std::cout << emissiveSurf.size() << std::endl;
+    for(int i =0 ;i < emissiveSurf.size(); ++i)
+    {
+        Vector3f hit_to_light = (vectorTransform(emissiveSurf[i]->transform, emissiveSurf[i]->sample(), 1.0f) - hit);
+        float d_h2l = qPow(hit_to_light[0],2) + qPow(hit_to_light[1],2) + qPow(hit_to_light[2],2); // squared distance between light and i.hit
+        hit_to_light.normalize();
 
         IntersectionInfo li;
-        Ray newray(hit + toLight*FLOAT_EPSILON, toLight);
+        Ray newray(hit + hit_to_light * FLOAT_EPSILON, hit_to_light);
 
-        if(scene.getIntersection(newray, &li)) {
-            //check if shadowed
+        if(scene.getIntersection(newray, &li))
+        {
             const Triangle *t = static_cast<const Triangle *>(li.data);
-            if(t->getIndex() == lights[i]->getIndex()){
+            if(t->getIndex() == emissiveSurf[i]->getIndex())
+            {
 
-                Vector3f e = Vector3f(lights[i]->getMaterial().emission[0], lights[i]->getMaterial().emission[1], lights[i]->getMaterial().emission[2]);
-                e = e *6.0f;
+                Vector3f emission = Vector3f(emissiveSurf[i]->getMaterial().emission);
+                emission = emission * 2.5f; // artificial brighten
+                float remove_peaks = hit_to_light.dot(t->getNormal(li));
 
-                if (toLight.dot(t->getNormal(li)) > 0.0f ) continue;
-                float ndotl = clamp(toLight.dot(normal), 0.f, 1.f);
+                if (remove_peaks > 0.0f )
+                    continue;
 
-                intensity += e * (lights[i]->getSurfaceArea() * ndotl * qAbs(toLight.dot((t->getNormal(li)).normalized() )) / distSquare);
-                if (e[0] == 0)
-                    std::cout << "Zero emission detected" << std::endl;
-            }
+                float abs_normal = clamp(hit_to_light.dot(normal), 0.0f, 1.0f) * qAbs(hit_to_light.dot((t->getNormal(li)).normalized() ));
+                const float area = emissiveSurf[i]->getArea();
 
-        }
-    }
-
-    return intensity;
-
-}
-
-Vector3f sampleDirectLighting(Vector3f p, const Vector3f pn, const tinyobj::material_t& pmat, int pmat_type, Ray p_rin, const Scene &scene){
-
-    Vector3f dL = Vector3f::Zero();
-    const tinyobj::real_t *d = pmat.diffuse; //Diffuse color as array of floats
-    Vector3f pd = Vector3f(d[0], d[1], d[2]);
-    std::vector<Triangle *> lights = scene.getEmissiveTriangles();
-
-    for(int i =0 ;i < lights.size(); ++i){
-
-        Vector3f pl = lights[i]->getRandomPointWithin();
-        Vector3f rd = (pl - p).normalized();
-        Ray ray2light(p, rd); //the ray from hit point to a sampled point in the light source
-
-        IntersectionInfo li;
-        if(scene.getIntersection(ray2light, &li)) {
-            //check if shadowed
-            const Triangle *t = static_cast<const Triangle *>(li.data);
-            if(t->getIndex() == lights[i]->getIndex()){
-
-                //get the parameters needed from this emissive triangle
-                Vector3f e = Vector3f(lights[i]->getMaterial().emission[0], lights[i]->getMaterial().emission[1], lights[i]->getMaterial().emission[2]);
-
-                const Vector3f ln = lights[i]->getNormal(li); //emissive triangle normal
-                const Affine3f l_invNT = lights[i]->inverseTransform;// getInverseNormalTransform(); //emissive triangle invNormalTransform matrix
-                const Vector3f world_ln = l_invNT * ln;
-
-                float cos_p = std::min(1.f, std::max(0.f, pn.normalized().dot(ray2light.d.normalized()))); //cosine term at p
-                float cos_l = std::min(1.f, std::max(0.f, world_ln.normalized().dot(-ray2light.d.normalized()))); //cosine term at the light
-                float dist2 = std::pow((pl - p).norm(), 2); //Question: Is this what is meant in the equation;
-                float t_area = lights[i]->findArea() ; //->getArea();
-//                std::cout << t_area << std::endl;
-                float c = ( cos_p * cos_l )/ dist2;
-
-                dL += (e.array() * pd.array()).matrix() * c * t_area; //* M_PI; //essentially divided by pdf = 1/area
+                out += emission * (area * abs_normal  / d_h2l);
 
             }
 
         }
     }
 
-//    dL = dL / lights.size();
-    return dL;
-
+    return out;
 }
 
-Vector3f PathTracer::traceRay(const Ray& r, const Scene& scene, uint depth, unsigned short *Xi, bool show_lights)
+Vector3f PathTracer::traceRay(const Ray& r, const Scene& scene, uint depth, unsigned short *ER48SEED, bool itsLit)
 {
     Vector3f L = Vector3f(0,0,0); // radiance
 
     IntersectionInfo i;
-    Ray ray(r);                             // maxdepth
+    Ray ray(r);
     if(scene.getIntersection(ray, &i) && depth < m_maxdepth) {
 
-          //** Example code for accessing materials provided by a .mtl file **
         const Mesh *m = static_cast<const Mesh *>(i.object);
-        const Triangle *t = static_cast<const Triangle *>(i.data);//Get the triangle in the mesh that was intersected
-        const tinyobj::material_t& mat = t->getMaterial();//Get the material of the triangle from the mesh
-//        const std::string diffuseTex = mat.diffuse_texname;//Diffuse texture name
-        const tinyobj::real_t *diffuse = mat.diffuse;//Diffuse color as array of floats
+        const Triangle *t = static_cast<const Triangle *>(i.data);
+        const tinyobj::material_t& mat = t->getMaterial();
+        //const std::string diffuseTex = mat.diffuse_texname;//Diffuse texture name
+        const tinyobj::real_t *diffuse = mat.diffuse;
         const tinyobj::real_t *emission = mat.emission;
         const tinyobj::real_t *specular = mat.specular;
 
-/////////////////////////////////////////////////////////////////////////////////////
-//                  NEW  --- START
-/////////////////////////////////////////////////////////////////////////////////////
-
-          // OLD - depth update
-//        if (!depth)
-//            L +=Vector3f(emission);
 
 
-        // NEW - NORMAL
-        Vector3f normal_uncorr = t->getNormal(i);
-        Vector4f normal_uncorr4d = Vector4f(normal_uncorr[0],normal_uncorr[1],normal_uncorr[2],0);
-        Vector4f normal4d = m->inverseNormalTransform.matrix() * normal_uncorr4d;
-        Vector3f normal = Vector3f(normal4d[0],normal4d[1],normal4d[2]);
-//        const glm::vec3 normal = glm::normalize((m->inverseNormalTransform * glm::vec4(t->getNormal(i), 0)).xyz());
+        Vector3f normal = vectorTransform(m->inverseNormalTransform,  t->getNormal(i), 0.0f);
+        normal.normalize();
+        Vector3f surf_normal = normal.dot(ray.d) < 0 ? normal : -normal ; // surface normal fixed for orientation
 
-        // OLD - NORMAL
-//        Vector3f normal = t->getNormal(i);
+        // Enable Caustics
+        if (itsLit) if(m->isLight) L +=Vector3f(emission);
 
+        auto pdfbreak = erand48(ER48SEED);
 
-        normal.normalize(); // surface normal   ,  n
-        const bool inward = normal.dot(ray.d) < 0;
-        Vector3f surf_normal = inward ? normal : -normal ; // surface normal fixed for orientation , nl
-
-        // fixed caustics
-        if (m->isLight && show_lights) {
-             L +=Vector3f(emission);
-        }
-
-        // Diffuse
+        // DIFFUSE
         if (mat.illum == 2)
-        {                           // mindepth
-            const float pdf_rr = depth < m_mindepth ? 1.0f : qMin(qMax(diffuse[0], qMax(diffuse[1], diffuse[2])), 0.99f);
-            Vector3f albedo = Vector3f(diffuse[0],diffuse[1],diffuse[2]) / EIGEN_PI;
-            if (erand48(Xi) < pdf_rr)
+        {
+            const float pdf_rr = russianRouletteBRDF(depth, brdfLimit(diffuse, 0.99f));
+
+            if (pdfbreak < pdf_rr)
             {
                 Vector3f wi;
                 float pdf;
-                cosineSampleHemisphere(normal, wi, pdf, Xi);
-                const float illum_scale = wi.dot(normal) / (pdf * pdf_rr);
-                Vector3f directlight = sampleDirectLightingCombined(i.hit, normal,i.hit, normal,mat,scene) * illum_scale;
-//                Vector3f directlight = sampleDirectLighting(i.hit, normal, mat, mat.illum, ray, scene)* illum_scale;
-//                 Vector3f directlight = directLighting(i.hit, normal, scene)* illum_scale;
-                Ray ray_o(i.hit + FLOAT_EPSILON * wi, wi);
-                Vector3f indirectlight = traceRay(ray_o, scene, depth + 1, Xi, false) * illum_scale;
+                sampleHemisphereImportance(wi, pdf, normal, mat, ER48SEED);
 
-                Vector3f brdf = albedo;
+                const float scalle = wi.dot(normal) / (pdf * pdf_rr);
+                Ray ray_o(i.hit + FLOAT_EPSILON * wi, wi);
+
+                Vector3f directlight = directLighting(scene, normal, i.hit) * scalle;
+                Vector3f indirectlight = traceRay(ray_o, scene, depth + 1, ER48SEED, false) * scalle;
+
+                Vector3f albedo = Vector3f(diffuse) / EIGEN_PI;
+
+                // GLOSSY
                 if (Vector3f(specular) != Vector3f(0,0,0))
                 {
-                    Vector3f refl = (ray.d - 2.f * normal * normal.dot(ray.d)).normalized();
-                    if ( normal.dot(ray.d) >= 0.0f ) refl = ray.d;
-                    float c = (mat.shininess + 2) * qPow(refl.dot(ray_o.d), mat.shininess) / (2 * EIGEN_PI) ;
-                    brdf = Vector3f(specular) * c;
-                }
+                    Vector3f refl;
+                    float ndotrd = normal.dot(ray.d);
 
-                L += (brdf.array() * directlight.array()).matrix();
-                L += (brdf.array() * indirectlight.array()).matrix();
+                    if ( ndotrd >= 0.0f )
+                        refl = ray.d;
+                    else
+                        refl = (ray.d - 2.f * normal * ndotrd).normalized();
+                    float c = (mat.shininess + 2) * qPow(qMax(0.f, qMin(1.f,refl.dot(ray_o.d))), mat.shininess) / (2 * EIGEN_PI) ;
+//                    float c = (mat.shininess + 2) * qPow(refl.dot(ray_o.d), mat.shininess) / (2 * EIGEN_PI) ;
+                    Vector3f brdf = Vector3f(specular) * c;
+                    L += (brdf.array() * directlight.array()).matrix();
+                    L += (brdf.array() * indirectlight.array()).matrix();
 
-
-
-            }
-        }
-
-        // Perfect specular
-        else if (mat.illum == 5)
-        {
-            Vector3f albedo = Vector3f(1.0f, 1.0f, 1.0f);
-            const float pdf_rr = depth < m_mindepth ? 1.0f : qMin(qMax(specular[0], qMax(specular[1], specular[2])), 0.99f);
-            if (erand48(Xi) < pdf_rr)
-            {
-              Vector3f refl = (ray.d - 2.f * normal * normal.dot(ray.d)).normalized();
-              if ( normal.dot(ray.d) >= 0.0f ) refl = ray.d;
-              Vector3f indirectlight = traceRay(Ray(i.hit + FLOAT_EPSILON * refl, refl), scene, depth + 1, Xi, true) / pdf_rr;
-              L += (albedo.array() * indirectlight.array()).matrix();
-            }
-        }
-
-        // Refraction
-        else if (mat.illum == 7)
-        {
-            Vector3f albedo = Vector3f(1.0f, 1.0f, 1.0f);
-            const float pdf_rr = depth < m_mindepth ? 1.f : 0.95f;
-            if (erand48(Xi) < pdf_rr) {
-                const Vector3f refl = (ray.d - 2.f * normal * normal.dot(ray.d)).normalized();
-                const float ni = 1.f;
-                const float nt = mat.ior;
-                const float ratio = normal.dot(ray.d) < 0 ? ni / nt : nt / ni;
-
-                const float costheta = ray.d.dot(surf_normal);
-                const float radicand = 1.f - ratio * ratio * (1.f - costheta*costheta);
-
-                // TODO m_full
-                Vector3f indirectlight(0,0,0);
-                if (radicand < FLOAT_EPSILON)
-                {
-                  indirectlight = traceRay(Ray(i.hit + FLOAT_EPSILON * refl, refl), scene, depth + 1, Xi, true) / pdf_rr;
                 }
                 else
                 {
-                    Vector3f refr;
-                    if (normal.dot(ray.d) < 0)
+
+                    L += (albedo.array() * directlight.array()).matrix();
+                    L += (albedo.array() * indirectlight.array()).matrix();
+                }
+
+
+
+            }
+        }
+
+        // REFRACTION
+        else if (mat.illum == 7)
+        {
+            const float pdf_rr = russianRouletteBRDF(depth, 0.95f);
+
+            if (pdfbreak < pdf_rr)
+            {
+                Vector3f indirectlight(0,0,0);
+                float ndotrd = normal.dot(ray.d);
+
+                const float costheta = ray.d.dot(surf_normal);
+                const float ratio = ndotrd < 0 ? 1.0f / mat.ior : mat.ior;
+                const float cand_radi = 1.0f - qPow(ratio,2) * (1.0f - qPow(costheta,2));
+                const Vector3f reflection = (ray.d - 2.f * normal * ndotrd).normalized();
+
+                if (cand_radi < FLOAT_EPSILON)
+                {
+                  indirectlight = traceRay(Ray(i.hit + FLOAT_EPSILON * reflection, reflection), scene, depth + 1, ER48SEED, true) / pdf_rr;
+                }
+
+                else
+                {
+                    // WITH ATTENUATION : https://www.scratchapixel.com/lessons/3d-basic-rendering/global-illumination-path-tracing
+                    Vector3f refraction = ray.d * ratio - surf_normal * (costheta * ratio + qSqrt(cand_radi));
+
+                    const float r_o = qPow((mat.ior - 1.0f),2) / qPow((mat.ior + 1.0f),2);
+                    float mix_angle = ndotrd < 0 ? -costheta : refraction.dot(normal);
+                    const float theta_R = r_o + (1.f - r_o) * qPow(1.f - mix_angle, 5);
+
+                    if (erand48(ER48SEED) < theta_R)
                     {
-                        refr = ray.d * ratio - normal * (costheta * ratio + qSqrt(radicand));
+                       Ray ray_o(i.hit + FLOAT_EPSILON * reflection, reflection);
+                      indirectlight = traceRay(ray_o, scene, depth + 1, ER48SEED, true) / pdf_rr;
                     }
                     else
                     {
-                        refr = ray.d * ratio + normal * (costheta * ratio + qSqrt(radicand));
-                    }
-                    const float R0 = (nt - ni) * (nt - ni) / ((nt + ni) * (nt + ni));
-                    const float Rtheta = R0 + (1.f - R0) * qPow(1.f - (normal.dot(ray.d) < 0 ? -costheta : refr.dot(normal)), 5);
-                    if (erand48(Xi) < Rtheta)
-                    {
-                      indirectlight = traceRay(Ray(i.hit + FLOAT_EPSILON * refl, refl), scene, depth + 1, Xi, true) / pdf_rr;
-                    }
-                    else
-                    {
-                      indirectlight = traceRay(Ray(i.hit + FLOAT_EPSILON * refr, refr), scene, depth + 1, Xi, true) / pdf_rr;
+                        Ray ray_o(i.hit + FLOAT_EPSILON * refraction, refraction);
+                      indirectlight = traceRay(ray_o, scene, depth + 1, ER48SEED, true) / pdf_rr;
                     }
                 }
-                 L += (albedo.array() * indirectlight.array()).matrix();
+
+                Vector3f albedo = Vector3f(1.0f, 1.0f, 1.0f);
+                L += (albedo.array() * indirectlight.array()).matrix();
             }
 
         }
-/////////////////////////////////////////////////////////////////////////////////////
-//                  NEW  --- END
-/////////////////////////////////////////////////////////////////////////////////////
+
+        // SPECULAR
+        else if (mat.illum == 5)
+        {
+            const float pdf_rr = russianRouletteBRDF(depth, brdfLimit(specular, 0.99f));
+
+            if (pdfbreak < pdf_rr)
+            {
+              float ndotrd = normal.dot(ray.d);
+              Vector3f reflection = (ray.d - 2.f * normal * ndotrd);
+              reflection.normalize();
+              if ( ndotrd >= 0.0f )
+                  reflection = ray.d;
+
+              Ray ray_o(i.hit + FLOAT_EPSILON * reflection, reflection);
+              Vector3f indirectlight = traceRay(ray_o, scene, depth + 1, ER48SEED, true) / pdf_rr;
+              Vector3f albedo = Vector3f(1.0f, 1.0f, 1.0f);
+              L += (albedo.array() * indirectlight.array()).matrix();
+            }
+        }
 
         return L;
     }
@@ -432,8 +356,6 @@ Vector3f PathTracer::traceRay(const Ray& r, const Scene& scene, uint depth, unsi
 }
 
 int clampIntensity(float v){
-//    v = clamp(v,0.0f,1.0f);
-//    return (int)(255.0f * qPow( v, GAMMA_CORR ) + 0.5);
     return (int)(255.0f * v / (1.0f + v));
 }
 

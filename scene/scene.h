@@ -23,29 +23,26 @@ public:
 
     void setBVH(const BVH &bvh);
     const BVH& getBVH() const;
+    const std::vector<Triangle *>& getLightSources() const;
 
     const BasicCamera& getCamera() const;
 
     void setCamera(const BasicCamera& camera);
     void setGlobalData(const CS123SceneGlobalData& data);
     void addLight(const CS123SceneLightData& data);
-    const std::vector<Triangle *>& getEmissiveTriangles() const;
     const std::vector<CS123SceneLightData>& getLights();
 
     bool getIntersection(const Ray& ray, IntersectionInfo* I) const;
-    std::vector<Object *> *lights;
 
 private:
 
     BVH *m_bvh;
+    std::vector<Triangle *> m_lightsources;
     std::vector<Object *> *_objects;
-
     BasicCamera m_camera;
-
     CS123SceneGlobalData m_globalData;
-    std::vector<Triangle *> m_emissive_tris;
     std::vector<CS123SceneLightData> m_lights;
-    static void parseEmissiveTriangles(Scene *scene);
+
     static bool parseTree(CS123SceneNode *root, Scene *scene, const std::string& baseDir);
     static void parseNode(CS123SceneNode *node, const Eigen::Affine3f &parentTransform, std::vector<Object *> *objects, const std::string& baseDir);
     static void addPrimitive(CS123ScenePrimitive *prim, const Eigen::Affine3f &transform, std::vector<Object *> *objects, const std::string& baseDir);

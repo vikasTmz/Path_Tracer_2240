@@ -29,7 +29,6 @@ Scene::~Scene()
     }
     delete _objects;
     delete m_bvh;
-    delete lights;
 }
 
 bool Scene::load(QString filename, Scene **scenePointer)
@@ -64,36 +63,24 @@ bool Scene::load(QString filename, Scene **scenePointer)
     if(!parseTree(root, scene, dir.toStdString() + "/")) {
         return false;
     }
-    parseEmissiveTriangles(scene);
-    *scenePointer = scene;
-    return true;
-}
 
-void Scene::parseEmissiveTriangles(Scene *scene){
+    for(int j = 0; j < scene->_objects->size(); j++)
+    {
+        std::vector<Object *> meshes = static_cast<Mesh *>((*(scene->_objects))[j])->getTriangles();
 
-    std::cout<<"Before loading emmisive triangles:"<<scene->m_emissive_tris.size()<<std::endl;
+        for(int i =0 ; i < meshes.size(); ++i)
+        {
 
-    for(int i = 0; i<scene->_objects->size(); i++){
-        std::vector<Object *> mesh_objects = static_cast<Mesh *>((*(scene->_objects))[i])->getTriangles();
+            const tinyobj::material_t& mat = static_cast<Triangle *>(meshes[i])->getMaterial();
 
-        int ntri = mesh_objects.size();
-
-        for(int i =0 ; i < mesh_objects.size(); ++i){
-
-            const tinyobj::material_t& mat = static_cast<Triangle *>(mesh_objects[i])->getMaterial();
-            int idx = static_cast<Triangle *>(mesh_objects[i])->getIndex();
-
-            const tinyobj::real_t *e = mat.emission;
-            if(e[0] > 0 || e[1] > 0 || e[2] > 0 ){
-                std::cout<<"This is an emissive triangle of index "<<idx<<std::endl;
-                scene->m_emissive_tris.push_back(static_cast<Triangle *>(mesh_objects[i]));
-                std::cout << static_cast<Triangle *>(mesh_objects[i])->findArea() << std::endl;
-            }
+            if(mat.emission[0] > 0 || mat.emission[1] > 0 || mat.emission[2] > 0 )
+                scene->m_lightsources.push_back(static_cast<Triangle *>(meshes[i]));
         }
 
     }
-    std::cout<<"After loading emmisive triangles:"<<scene->m_emissive_tris.size()<<std::endl;
 
+    *scenePointer = scene;
+    return true;
 }
 
 void Scene::setBVH(const BVH &bvh)
@@ -113,32 +100,6 @@ bool Scene::parseTree(CS123SceneNode *root, Scene *scene, const std::string &bas
 
     scene->_objects = objects;
     scene->setBVH(*bvh);
-//    std::cout<<"Before loading emmisive triangles:"<<scene->*lights.size()<<std::endl;
-//    for (Object* obj : *objects) {
-//        std::vector<Object *> mesh_objects = static_cast<Mesh *>(obj)->getTriangles();
-//        std::cout << "out=  " << obj->getCentroid() << std::endl;
-//        for(Object* mesh : mesh_objects)
-//        {
-//            const tinyobj::material_t& mat = static_cast<Triangle *>(mesh)->getMaterial();
-//            int idx = static_cast<Triangle *>(mesh)->getIndex();
-
-//            const tinyobj::real_t *e = mat.emission;
-//            std::cout << "e =  " <<  e[0] << std::endl;
-//            if(e[0] > 0 || e[1] > 0 || e[2] > 0 ){
-//                std::cout << "in =  " <<  obj->getCentroid() << std::endl;
-////                scene->lights.push_back(mesh);
-//            }
-//        }
-//    }
-//    std::cout<<"After loading emmisive triangles:"<<scene->lights.size()<<std::endl;
-
-    std::vector<Object *> *lights = new std::vector<Object *>;
-    for (Object* obj : *objects) {
-            if (obj->isLight) {
-                lights->push_back(obj);
-            }
-        }
-    scene->lights = lights;
 
     return true;
 }
@@ -310,10 +271,6 @@ void Scene::addLight(const CS123SceneLightData &data)
     m_lights.push_back(data);
 }
 
-const std::vector<Triangle *>& Scene::getEmissiveTriangles() const
-{
-    return m_emissive_tris;
-}
 const std::vector<CS123SceneLightData> &Scene::getLights()
 {
     return m_lights;
@@ -323,3 +280,8 @@ bool Scene::getIntersection(const Ray& ray, IntersectionInfo* I) const{
     return getBVH().getIntersection(ray, I, false);
 }
 
+// get light sources of type Triangle
+const std::vector<Triangle *>& Scene::getLightSources() const
+{
+    return m_lightsources;
+}

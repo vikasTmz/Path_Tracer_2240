@@ -1,9 +1,9 @@
 import numpy as np
 import cv2
 from matplotlib import pyplot as plt
-img = cv2.imread('rendered_orgrand_fixed_50_4.png')
+img = cv2.imread('glossy/rendered_glossyusenew_4000.png')
 
-clean = cv2.fastNlMeansDenoising(img, 2.0, 3, 21)
+clean = cv2.fastNlMeansDenoising(img, 2.0, 4, 21)
 cv2.imwrite("filter_fixed_diffuse.png", clean)
 # create a list of first 5 frames
 # img = [cap.read()[1] for i in xrange(5)]

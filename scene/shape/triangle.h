@@ -14,8 +14,7 @@ public:
              int index);
 
     virtual bool getIntersection(const Ray &ray, IntersectionInfo *intersection) const;
-    virtual Eigen::Vector3f sample() const;
-    virtual float getSurfaceArea() const;
+
 
     virtual Eigen::Vector3f getNormal(const IntersectionInfo &I) const;
     virtual Eigen::Vector3f getNormal(const Eigen::Vector3f &p) const;
@@ -23,10 +22,11 @@ public:
     virtual BBox getBBox() const;
 
     virtual Eigen::Vector3f getCentroid() const;
+    virtual Eigen::Vector3f sample() const;
+    virtual float getArea() const;
 
     int getIndex() const;
-    float findArea() const;
-    Eigen::Vector3f getRandomPointWithin() const;
+
     tinyobj::material_t getMaterial() const;
     void setMaterial(const tinyobj::material_t &material);
 
@@ -37,7 +37,7 @@ private:
     tinyobj::material_t m_material;
 
     int m_index;
-    float m_sa;
+    float m_area;
 
     BBox _bbox;
 
