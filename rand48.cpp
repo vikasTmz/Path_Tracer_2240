@@ -1,3 +1,13 @@
+// Author
+// Donald Knuth,
+// The Art of Computer Programming,
+// Volume 2, Seminumerical Algorithms,
+// Third Edition,
+// Addison Wesley, 1997,
+// ISBN: 0201896842,
+// LC: QA76.6.K64.
+// https://people.sc.fsu.edu/~jburkardt/cpp_src/rand48/rand48.html
+
 #pragma once
 
 #include <stdlib.h>

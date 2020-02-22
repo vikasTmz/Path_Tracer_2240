@@ -64,13 +64,13 @@ bool Scene::load(QString filename, Scene **scenePointer)
         return false;
     }
 
+    // Adding Emissive Triangles (i.e light sources)
     for(int j = 0; j < scene->_objects->size(); j++)
     {
         std::vector<Object *> meshes = static_cast<Mesh *>((*(scene->_objects))[j])->getTriangles();
 
         for(int i =0 ; i < meshes.size(); ++i)
         {
-
             const tinyobj::material_t& mat = static_cast<Triangle *>(meshes[i])->getMaterial();
 
             if(mat.emission[0] > 0 || mat.emission[1] > 0 || mat.emission[2] > 0 )

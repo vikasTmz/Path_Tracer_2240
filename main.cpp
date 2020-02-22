@@ -36,7 +36,7 @@ int main(int argc, char *argv[])
     QString scenefile = args[0];
     QString output = args[1];
     quint16 num_samples = 0;
-    num_samples = args[2].toUShort(&ok, 10); // unsigned short int as number of samples will realistically never be large.
+    num_samples = args[2].toUShort(&ok, 10); // unsigned short int as large sample size is unreasonable to compute.
     int height = args[3].toInt();
     int width = args[4].toInt();
 

@@ -51,7 +51,7 @@ float PathTracer::random()
     return distribution(rseed);
 }
 
-void depthOfField(Vector3f &orientation, Vector3f &direction, Vector3f &p, Vector3f &d, float focal, float aperture, unsigned short *ER48SEED)
+void PathTracer::depthOfField(Vector3f &orientation, Vector3f &direction, Vector3f &p, Vector3f &d, float focal, float aperture, unsigned short *ER48SEED)
 {
     Vector3f erand3f( 0.5 - erand48(ER48SEED), 0.5 - erand48(ER48SEED), 0.5 - erand48(ER48SEED));
     orientation = p + aperture * erand3f;
@@ -75,11 +75,8 @@ void PathTracer::traceScene(QRgb *imageData, const Scene& scene)
         for(int x = 0; x < m_width; ++x)
         {
             int offset = x + (y * m_width);
+            intensityValues[offset] = tracePixel(x, y, scene, invViewMat);
 
-//            if (x > 370 && y > 370)
-                intensityValues[offset] = tracePixel(x, y, scene, invViewMat);
-//            else
-//                intensityValues[offset] = Vector3f(0,0,0);
         }
     }
 
@@ -106,21 +103,13 @@ Vector3f PathTracer::tracePixel(int x, int y, const Scene& scene, const Matrix4f
         Ray r(p, d);
         r = r.transform(invViewMatrix);
 
-
-//            float m_focal_len = 3.2;
-//            float m_aperture = 0.3;
-//            Vector3f jitter_p = p + m_aperture * Vector3f(erand48(ER48SEED)-0.5f, erand48(ER48SEED)-0.5f, erand48(ER48SEED)-0.5f);
-//            Vector3f focal_p = p + m_focal_len * d;
-//            Vector3f jitter_d = (focal_p - jitter_p).normalized();
-
         // DEPTH OF FIELD
-        Vector3f orientation;
-        Vector3f direction;
-        depthOfField(orientation, direction, p, d, 4.0,0.5,ER48SEED);
-        r.o = orientation;
-        r.d = direction;
-        //r.d = d;
-        r = r.transform(invViewMatrix);
+//        Vector3f orientation;
+//        Vector3f direction;
+//        depthOfField(orientation, direction, p, d, 4.0,0.5,ER48SEED);
+//        r.o = orientation;
+//        r.d = direction;
+//        r = r.transform(invViewMatrix);
 
 
 
@@ -132,17 +121,7 @@ Vector3f PathTracer::tracePixel(int x, int y, const Scene& scene, const Matrix4f
     return out;
 }
 
-Vector3f tangentConvert(const Vector3f& pointdir, const Vector3f& normal) {
-    Vector3f tangent = qFabs(normal[0]) > qFabs(normal[1]) ? Vector3f(normal[2], 0, -normal[0]) : Vector3f(0, -normal[2], normal[1]);
-    tangent.normalize();
-    Vector3f bitangent = normal.cross(tangent);
-
-    return Vector3f(pointdir[0] * bitangent[0] + pointdir[1] * normal[0] + pointdir[2] * tangent[0],
-                    pointdir[0] * bitangent[1] + pointdir[1] * normal[1] + pointdir[2] * tangent[1],
-                    pointdir[0] * bitangent[2] + pointdir[1] * normal[2] + pointdir[2] * tangent[2]).normalized();
-}
-
-void sampleHemisphereImportance(Vector3f &wi, float &pdf, const Vector3f &normal, const tinyobj::material_t& mat, unsigned short *ER48SEED)
+void PathTracer::sampleHemisphereImportance(Vector3f &wi, float &pdf, const Vector3f &normal, const tinyobj::material_t& mat, unsigned short *ER48SEED)
 {
     double r1 = erand48(ER48SEED);
     double r2 = erand48(ER48SEED);
@@ -150,22 +129,17 @@ void sampleHemisphereImportance(Vector3f &wi, float &pdf, const Vector3f &normal
     float phi = 2.f * EIGEN_PI * r1;
     float theta = qSqrt(r2);
 
-    wi = tangentConvert(Vector3f(theta * qCos(phi), qSqrt(1.0f - r2), theta * qSin(phi)).normalized(), normal);
+    Vector3f dir = Vector3f(theta * qCos(phi), qSqrt(1.0f - r2), theta * qSin(phi)).normalized();
+    Vector3f tangent = qFabs(normal[0]) > qFabs(normal[1]) ? Vector3f(normal[2], 0, -normal[0]) : Vector3f(0, -normal[2], normal[1]).normalized();
+    Vector3f per_tangent = normal.cross(tangent);
+    wi = Vector3f(dir[0] * per_tangent[0] + dir[1] * normal[0] + dir[2] * tangent[0],
+                        dir[0] * per_tangent[1] + dir[1] * normal[1] + dir[2] * tangent[1],
+                        dir[0] * per_tangent[2] + dir[1] * normal[2] + dir[2] * tangent[2]).normalized();
+
     pdf = normal.dot(wi) / EIGEN_PI;
 }
 
-void sampleHemisphereUniform(Vector3f &wi, float &pdf, const Vector3f& normal, unsigned short *ER48SEED) {
-    double r1 = erand48(ER48SEED);
-    double r2 = erand48(ER48SEED);
-
-    float phi = 2.f * EIGEN_PI * r1;
-    float sintheta = qSqrt(1.f - r2 * r2);
-
-    wi = tangentConvert(Vector3f(sintheta * cos(phi), r2, sintheta * sin(phi)).normalized(), normal);
-    pdf = 1.f / (2.f * EIGEN_PI);
-}
-
-Vector3f directLighting(const Scene &scene, const Vector3f& normal, const Vector3f& hit)
+Vector3f PathTracer::directLighting(const Scene &scene, const Vector3f& normal, const Vector3f& hit)
 {
 
     Vector3f out(0, 0, 0);
@@ -262,9 +236,9 @@ Vector3f PathTracer::traceRay(const Ray& r, const Scene& scene, uint depth, unsi
                         refl = ray.d;
                     else
                         refl = (ray.d - 2.f * normal * ndotrd).normalized();
-                    float c = (mat.shininess + 2) * qPow(qMax(0.f, qMin(1.f,refl.dot(ray_o.d))), mat.shininess) / (2 * EIGEN_PI) ;
-//                    float c = (mat.shininess + 2) * qPow(refl.dot(ray_o.d), mat.shininess) / (2 * EIGEN_PI) ;
-                    Vector3f brdf = Vector3f(specular) * c;
+
+                    float highlight = qPow(qMax(0.f, qMin(1.f,refl.dot(ray_o.d))), mat.shininess);
+                    Vector3f brdf = Vector3f(specular) * (mat.shininess + 2) * highlight / (2 * EIGEN_PI);
                     L += (brdf.array() * directlight.array()).matrix();
                     L += (brdf.array() * indirectlight.array()).matrix();
 
@@ -308,9 +282,9 @@ Vector3f PathTracer::traceRay(const Ray& r, const Scene& scene, uint depth, unsi
 
                     const float r_o = qPow((mat.ior - 1.0f),2) / qPow((mat.ior + 1.0f),2);
                     float mix_angle = ndotrd < 0 ? -costheta : refraction.dot(normal);
-                    const float theta_R = r_o + (1.f - r_o) * qPow(1.f - mix_angle, 5);
+//                    const float theta_R = r_o + (1.f - r_o) * qPow(1.f - mix_angle, 5);
 
-                    if (erand48(ER48SEED) < theta_R)
+                    if (erand48(ER48SEED) < (r_o + (1.f - r_o) * qPow(1.f - mix_angle, 5)))
                     {
                        Ray ray_o(i.hit + FLOAT_EPSILON * reflection, reflection);
                       indirectlight = traceRay(ray_o, scene, depth + 1, ER48SEED, true) / pdf_rr;
@@ -336,13 +310,16 @@ Vector3f PathTracer::traceRay(const Ray& r, const Scene& scene, uint depth, unsi
             if (pdfbreak < pdf_rr)
             {
               float ndotrd = normal.dot(ray.d);
+
               Vector3f reflection = (ray.d - 2.f * normal * ndotrd);
               reflection.normalize();
+
               if ( ndotrd >= 0.0f )
                   reflection = ray.d;
 
               Ray ray_o(i.hit + FLOAT_EPSILON * reflection, reflection);
               Vector3f indirectlight = traceRay(ray_o, scene, depth + 1, ER48SEED, true) / pdf_rr;
+
               Vector3f albedo = Vector3f(1.0f, 1.0f, 1.0f);
               L += (albedo.array() * indirectlight.array()).matrix();
             }
