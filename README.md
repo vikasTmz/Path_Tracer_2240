@@ -17,6 +17,38 @@ Qt Creator ( > 4.5.0)
 OpenMP
 ```
 
+## Usage
+
+#### Build :
+
+● [Option 1] Using Qt Creator.
+
+● [Option 2] Using CLI:
+```
+cd Path_Tracer_2240
+mkdir build
+cd build
+qmake -makefile ../path-stencil.pro
+make -j4
+```
+
+#### Run :
+
+● Using Qt Creator
+
+Set the following arguments in Qt Creator.
+```
+# <path to xml file> <rendered image path> <number of samples> <image height> <image width>
+../Path_Tracer_2240/example-scenes/CornellBox-Sphere.xml ./output.png 100 256 256
+```
+
+● Using CLI :
+
+```
+./path-stencil ../Path_Tracer_2240/example-scenes/CornellBox-Sphere.xml ./output.png 100 256
+256
+```
+
 ## Implementation
 
 #### Four basic types of BRDFs ​✔
